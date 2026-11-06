@@ -35,14 +35,13 @@ from modules.c11_m1 import marks, store
 from portal_common.problems import Problem
 
 MODULE = "c11-m1"
+FIELDS = ("notificationId", "type", "topic", "companyId", "subjectType", "subjectId", "content", "forStaff",
+          "done", "createdAt", "doneAt")   # openapi `Notification`, apart from `read`, which is per person
 
 
 def view(n: dict, sub: str | None) -> dict:
     """Schema `Notification` with `read` for the calling person (README 7.3)."""
-    return {"notificationId": n["notificationId"], "type": n["type"], "topic": n["topic"],
-            "companyId": n["companyId"], "subjectType": n["subjectType"], "subjectId": n["subjectId"],
-            "content": n["content"], "forStaff": n["forStaff"], "read": marks.is_read(n, sub),
-            "done": n["done"], "createdAt": n["createdAt"], "doneAt": n["doneAt"]}
+    return {f: n[f] for f in FIELDS} | {"read": marks.is_read(n, sub)}
 
 
 def own(claims: dict) -> list[dict]:
