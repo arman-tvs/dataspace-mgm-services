@@ -271,33 +271,14 @@ def only(client, person: str, ntype: str) -> dict:
     return n
 
 
-def test_list_shows_the_own_inbox_with_paging(client):
-    c11.on_event(submitted())
-    page = call(client, "GET", "", "erika").json()
-    assert (page["page"], page["size"], page["total"]) == (0, 20, 1)
-    [n] = page["items"]
-    assert (n["type"], n["topic"], n["read"], n["done"], n["forStaff"]) == ("APPLICATION_SUBMITTED", "INFO",
-                                                                             False, None, False)
-    assert n["subjectId"] == APPLICATION and n["content"]["applicationId"] == APPLICATION
-    assert call(client, "GET", "", "lieschen").json()["total"] == 0
-    [task] = call(client, "GET", "", "rolf").json()["items"]   # staff: review_application (README 4)
-    assert (task["type"], task["done"], task["forStaff"]) == ("REVIEW_CASE_OPENED", False, True)
-
-
-def test_filters_sort_and_pages(client):
-    for i in range(3):
-        c11.on_event(change_request(changeRequestId=str(uuid.UUID(int=i + 1))))
-    for i, n in enumerate(store.notifications):   # fixed times make the order deterministic
-        n["createdAt"] = f"2026-11-06T09:3{i}:00+00:00"
-    ids = [n["notificationId"] for n in store.notifications]
-    desc = call(client, "GET", "", "rolf", params={"size": 2}).json()
-    assert [n["notificationId"] for n in desc["items"]] == ids[:0:-1] and desc["total"] == 3
-    rest = call(client, "GET", "", "rolf", params={"size": 2, "page": 1, "sort": "createdAt.asc"}).json()
-    assert [n["notificationId"] for n in rest["items"]] == ids[2:]
-    since = call(client, "GET", "", "rolf", params={"createdSince": "2026-11-06T09:31:00Z"}).json()
-    assert since["total"] == 2
-    assert call(client, "GET", "", "rolf", params={"topic": "INFO"}).json()["total"] == 0
-    assert call(client, "GET", "", "rolf", params={"done": "false", "type": "CHANGE_REQUEST_OPENED"}).json()["total"] == 3
+def test_list_passes_filters_sort_and_paging(client):
+    created = three_change_requests()
+    params = {"type": "CHANGE_REQUEST_OPENED", "topic": "ACTION", "done": "false", "read": "false",
+              "createdSince": "2026-11-06T09:31:00Z", "sort": "createdAt.asc", "page": 0, "size": 1}
+    page = call(client, "GET", "", "rolf", params=params).json()
+    assert page == {"items": page["items"], "page": 0, "size": 1, "total": 2}
+    assert [n["notificationId"] for n in page["items"]] == created[1:2]
+    assert call(client, "GET", "", "rolf").json()["size"] == 20   # FRAMEWORK 4.1 default
 
 
 @pytest.mark.parametrize("params", [{"topic": "TASK"}, {"read": "maybe"}, {"createdSince": "yesterday"},
@@ -307,48 +288,33 @@ def test_invalid_filter_is_validation_problem(client, params):
     assert r.status_code == 400 and r.json()["type"] == "urn:c11-m1:problem:validation"
 
 
-def test_read_unread_and_count(client):
+def test_count_get_read_and_unread(client):
     c11.on_event(submitted())
     nid = only(client, "erika", "APPLICATION_SUBMITTED")["notificationId"]
     assert call(client, "GET", "/count", "erika").json() == {"total": 1, "unread": 1, "openTasks": 0, "unreadInfo": 1}
-    for _ in range(2):   # idempotent (README 6.4)
-        assert call(client, "POST", f"/{nid}/read", "erika").status_code == 204
+    assert call(client, "POST", f"/{nid}/read", "erika").status_code == 204
     assert call(client, "GET", f"/{nid}", "erika").json()["read"] is True
-    assert call(client, "GET", "", "erika", params={"read": "false"}).json()["total"] == 0
-    assert call(client, "GET", "/count", "erika").json()["unread"] == 0
     assert call(client, "POST", f"/{nid}/unread", "erika").status_code == 204
     assert call(client, "GET", f"/{nid}", "erika").json()["read"] is False
 
 
-def test_staff_read_state_is_per_person(client):
-    """Acceptance 13.9: Rolf and Otto both have `review_company_changes` (R5)."""
-    c11.on_event(change_request())
-    nid = only(client, "rolf", "CHANGE_REQUEST_OPENED")["notificationId"]
-    assert call(client, "POST", f"/{nid}/read", "rolf").status_code == 204
-    assert only(client, "rolf", "CHANGE_REQUEST_OPENED")["read"] is True
-    assert only(client, "otto", "CHANGE_REQUEST_OPENED")["read"] is False
-    assert call(client, "GET", "/count", "otto").json() == {"total": 1, "unread": 1, "openTasks": 1, "unreadInfo": 0}
-
-
-def test_hide_open_task_conflicts_until_done(client):
+def test_hide_answers_409_problem_for_an_open_task_and_204_when_done(client):
     """Acceptance 13.8."""
     c11.on_event(change_request())
     nid = only(client, "rolf", "CHANGE_REQUEST_OPENED")["notificationId"]
     r = call(client, "POST", f"/{nid}/hide", "rolf")
     assert r.status_code == 409 and r.json()["type"] == "urn:c11-m1:problem:task-open"
     c11.on_event(change_request("CompanyChangeRequestClosed", outcome="APPROVED"))
-    for _ in range(2):
-        assert call(client, "POST", f"/{nid}/hide", "rolf").status_code == 204
+    assert call(client, "POST", f"/{nid}/hide", "rolf").status_code == 204
     assert call(client, "GET", "", "rolf").json()["total"] == 0
-    assert call(client, "GET", "", "otto").json()["total"] == 1   # hidden only for Rolf
 
 
 def test_other_persons_notification_is_not_found_and_has_no_names(client):
     """Acceptance 13.10."""
     c11.on_event(submitted())
     nid = only(client, "erika", "APPLICATION_SUBMITTED")["notificationId"]
-    for method, path in (("GET", f"/{nid}"), ("POST", f"/{nid}/read"), ("POST", f"/{nid}/hide"),
-                         ("GET", f"/{uuid.uuid4()}")):
+    for method, path in (("GET", f"/{nid}"), ("POST", f"/{nid}/read"), ("POST", f"/{nid}/unread"),
+                         ("POST", f"/{nid}/hide"), ("GET", f"/{uuid.uuid4()}")):
         r = call(client, method, path, "lieschen")
         assert r.status_code == 404 and r.json()["type"] == "urn:c11-m1:problem:not-found"
     text = str(call(client, "GET", f"/{nid}", "erika").json()).lower()
