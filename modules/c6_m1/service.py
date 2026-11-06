@@ -41,7 +41,9 @@ from .interface import (
     INACTIVE,
     LOCK,
     MODULE,
+    canonical,
     connectors,
+    deleted_technical_users,
     ended_subscriptions,
     now,
     publish_deactivated,
@@ -149,7 +151,7 @@ def _own_company(company_id: str | None) -> str:
 
 
 def _visible(connector_id: str, company_id: str) -> dict:
-    c = connectors.get(connector_id)
+    c = connectors.get(canonical(connector_id)) if _is_uuid(connector_id) else None
     if not c or company_id not in (c["provider_company_id"], c["host_company_id"]):
         raise Problem(MODULE, 404, "not-found")
     return c
@@ -165,6 +167,8 @@ def _register(*, name, endpoint, location, technical_user_id, ctype, provider, h
         if sub_id and any(c["offer_subscription_id"] == sub_id for c in _live()):
             raise Problem(MODULE, 409, "subscription-linked")
         _check_duplicate(name, endpoint)
+        if technical_user_id in deleted_technical_users:
+            raise Problem(MODULE, 409, "technical-user-not-usable", detail="technical user was deleted")
         if technical_user_id and any(c["technical_user_id"] == technical_user_id for c in _live()):
             raise Problem(MODULE, 409, "technical-user-not-usable")
         return _insert(name=name, endpoint=endpoint, location=location, technical_user_id=technical_user_id,
@@ -208,6 +212,7 @@ def register_connector(company_id: str | None, sub: str | None, body: dict) -> d
     """7.2: company connector of the own company."""
     own = _own_company(company_id)
     _check_input(body.get("name"), body.get("endpoint"), body.get("location"), body.get("technicalUserId"))
+    body = body | {"technicalUserId": canonical(body["technicalUserId"]) if body.get("technicalUserId") else None}
     _check_host_active(own)
     _check_duplicate(body["name"], body["endpoint"])
     _check_technical_user(body.get("technicalUserId"), own, None)
@@ -223,6 +228,8 @@ def register_connector_as_a_service(company_id: str | None, sub: str | None, bod
     sub_id = body.get("offerSubscriptionId")
     if not _is_uuid(sub_id):
         raise Problem(MODULE, 400, "validation", errors=[{"field": "offerSubscriptionId", "message": "UUID"}])
+    sub_id = canonical(sub_id)
+    body = body | {"technicalUserId": canonical(body["technicalUserId"]) if body.get("technicalUserId") else None}
     s = subscription(sub_id)
     if not s or s.get("providerCompanyId") != own:
         raise Problem(MODULE, 404, "not-found", detail="subscription unknown or not of an own offer")

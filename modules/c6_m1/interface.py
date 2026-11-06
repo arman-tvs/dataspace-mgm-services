@@ -54,6 +54,7 @@ audit: list[dict] = []               # table `audit_entry` (FRAMEWORK 4.3)
 stub_companies: dict[str, str] = {}          # built-in stand-in of C3-M1: companyId -> status (README 11)
 stub_subscriptions: dict[str, dict] = {}     # built-in stand-in of C10-M1: offerSubscriptionId -> subscription
 ended_subscriptions: set[str] = set()        # subscriptions that step 8.1 has run for; no new connector after it
+deleted_technical_users: set[str] = set()    # accounts that step 8.2 has run for (deleted in C2-M3); never linked again
 
 
 def _load(name: str) -> dict:
@@ -66,6 +67,7 @@ def reset() -> None:
         connectors.clear()
         audit.clear()
         ended_subscriptions.clear()
+        deleted_technical_users.clear()
         stub_companies.clear()
         stub_companies.update(_load("stub-companies.json").get("companies", {}))
         stub_subscriptions.clear()
@@ -105,6 +107,12 @@ def is_uuid(value) -> bool:
     return True
 
 
+def canonical(value: str) -> str:
+    """One spelling per UUID (lower case, with hyphens), so that comparisons and links do not depend
+    on the casing a caller used."""
+    return str(uuid.UUID(value))
+
+
 def _step_input(input: dict, key: str) -> str:
     """StepInput of openapi.yaml: `processId`, `stepRunId` and the business key, all UUIDs.
     Checked before anything changes (README 8, FRAMEWORK 4.4)."""
@@ -114,7 +122,7 @@ def _step_input(input: dict, key: str) -> str:
               if not is_uuid(input.get(f))]
     if errors:
         raise Problem(MODULE, 400, "validation", errors=errors, retryable=False)
-    return input[key]
+    return canonical(input[key])
 
 
 # ---------------------------------------------------------------- steps (README 8)
@@ -144,6 +152,7 @@ def unlink_technical_user(input: dict) -> dict:
     tu_id = _step_input(input, "technicalUserId")
     changed = []
     with LOCK:
+        deleted_technical_users.add(tu_id)   # also without connectors, so a later registration is refused
         for c in connectors.values():
             if c["technical_user_id"] == tu_id:
                 c.update(technical_user_id=None, changed_at=now())
@@ -157,6 +166,7 @@ def list_connectors_internal(*, technicalUserId: str | None = None, **_other) ->
     """9.1: the ACTIVE connectors that use this technical user, as `ConnectorRef`."""
     if not is_uuid(technicalUserId):
         raise Problem(MODULE, 400, "validation", detail="technicalUserId must be a UUID")
+    technicalUserId = canonical(technicalUserId)
     with LOCK:
         return [{"connectorId": c["id"], "status": c["status"]} for c in connectors.values()
                 if c["technical_user_id"] == technicalUserId and c["status"] == ACTIVE]
