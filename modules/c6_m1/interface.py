@@ -53,6 +53,7 @@ connectors: dict[str, dict] = {}     # connectorId -> row of table `connector` (
 audit: list[dict] = []               # table `audit_entry` (FRAMEWORK 4.3)
 stub_companies: dict[str, str] = {}          # built-in stand-in of C3-M1: companyId -> status (README 11)
 stub_subscriptions: dict[str, dict] = {}     # built-in stand-in of C10-M1: offerSubscriptionId -> subscription
+ended_subscriptions: set[str] = set()        # subscriptions that step 8.1 has run for; no new connector after it
 
 
 def _load(name: str) -> dict:
@@ -64,6 +65,7 @@ def reset() -> None:
     with LOCK:
         connectors.clear()
         audit.clear()
+        ended_subscriptions.clear()
         stub_companies.clear()
         stub_companies.update(_load("stub-companies.json").get("companies", {}))
         stub_subscriptions.clear()
@@ -124,6 +126,7 @@ def deactivate_subscription_connectors(input: dict) -> dict:
     sub_id = _step_input(input, "offerSubscriptionId")
     changed = []
     with LOCK:
+        ended_subscriptions.add(sub_id)   # also without connectors, so a later registration is refused
         for c in connectors.values():
             if c["offer_subscription_id"] != sub_id or (c["status"] == INACTIVE and c["technical_user_id"] is None):
                 continue
@@ -152,8 +155,8 @@ def unlink_technical_user(input: dict) -> dict:
 # ---------------------------------------------------------------- queries (README 9)
 def list_connectors_internal(*, technicalUserId: str | None = None, **_other) -> list:
     """9.1: the ACTIVE connectors that use this technical user, as `ConnectorRef`."""
-    if not technicalUserId:
-        raise Problem(MODULE, 400, "validation", detail="technicalUserId is required")
+    if not is_uuid(technicalUserId):
+        raise Problem(MODULE, 400, "validation", detail="technicalUserId must be a UUID")
     with LOCK:
         return [{"connectorId": c["id"], "status": c["status"]} for c in connectors.values()
                 if c["technical_user_id"] == technicalUserId and c["status"] == ACTIVE]

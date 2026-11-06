@@ -42,6 +42,7 @@ from .interface import (
     LOCK,
     MODULE,
     connectors,
+    ended_subscriptions,
     now,
     publish_deactivated,
     stub_companies,
@@ -94,10 +95,13 @@ def _check_input(name, endpoint, location, technical_user_id=None) -> None:
     endpoint = endpoint if isinstance(endpoint, str) else ""
     try:
         url = urlparse(endpoint)
+        _ = url.port   # raises ValueError for an invalid port
     except ValueError:
         url = None
-    if url is None or url.scheme != "https" or not url.netloc or len(endpoint) > 2000:
+    if url is None or url.scheme != "https" or not url.hostname or len(endpoint) > 2000:
         errors.append({"field": "endpoint", "message": "HTTPS URL"})
+    elif url.username is not None or url.password is not None:   # no credentials in data or events (FRAMEWORK 4.6)
+        errors.append({"field": "endpoint", "message": "must not contain user information"})
     countries = _known_countries()
     if technical_user_id is not None and not _is_uuid(technical_user_id):
         errors.append({"field": "technicalUserId", "message": "UUID"})
@@ -156,6 +160,8 @@ def _register(*, name, endpoint, location, technical_user_id, ctype, provider, h
     """The final uniqueness checks of README 5 and the insert as one unit under LOCK: of two concurrent
     requests that both passed the earlier checks, the second gets 409."""
     with LOCK:
+        if sub_id in ended_subscriptions:
+            raise Problem(MODULE, 409, "invalid-state", detail="subscription ended or declined")
         if sub_id and any(c["offer_subscription_id"] == sub_id for c in _live()):
             raise Problem(MODULE, 409, "subscription-linked")
         _check_duplicate(name, endpoint)
@@ -192,10 +198,10 @@ def list_connectors(company_id: str | None, *, role: str | None = None, type: st
             return False
         return c["status"] == status if status else c["status"] != INACTIVE
 
-    with LOCK:
+    with LOCK:   # filter and serialize from the same state
         items = sorted((c for c in connectors.values() if matches(c)), key=lambda c: (c["created_at"], c["id"]))
-    return {"items": [view(c) for c in items[page * size:(page + 1) * size]], "page": page, "size": size,
-            "total": len(items)}
+        return {"items": [view(c) for c in items[page * size:(page + 1) * size]], "page": page, "size": size,
+                "total": len(items)}
 
 
 def register_connector(company_id: str | None, sub: str | None, body: dict) -> dict:
@@ -266,17 +272,20 @@ def _change_endpoint(company_id: str | None, sub: str | None, connector_id: str,
 
 
 def delete_connector(company_id: str | None, sub: str | None, connector_id: str) -> None:
-    """7.6 under LOCK, so that it does not interleave with other changes of the connector."""
+    """7.6: C10-M1 is asked outside LOCK (it may be slow); the change runs under LOCK on the current row."""
+    own = _own_company(company_id)
     with LOCK:
-        _delete_connector(company_id, sub, connector_id)
+        sub_id = _visible(connector_id, own)["offer_subscription_id"]
+    s = subscription(sub_id) if sub_id else None
+    with LOCK:
+        _delete_connector(company_id, sub, connector_id, s)
 
 
-def _delete_connector(company_id: str | None, sub: str | None, connector_id: str) -> None:
+def _delete_connector(company_id: str | None, sub: str | None, connector_id: str, s: dict | None) -> None:
     """7.6: with a linked subscription the connector becomes INACTIVE and keeps the link; otherwise removed."""
     own = _own_company(company_id)
-    c = _visible(connector_id, own)
+    c = _visible(connector_id, own)   # may have been deleted meanwhile: 404
     if c["offer_subscription_id"]:
-        s = subscription(c["offer_subscription_id"])
         if s and s.get("status") == ACTIVE:
             raise Problem(MODULE, 409, "subscription-active")
         if c["status"] != INACTIVE:
