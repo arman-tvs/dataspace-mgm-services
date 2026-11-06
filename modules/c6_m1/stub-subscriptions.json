@@ -1,0 +1,11 @@
+{
+  "_comment": "Built-in stand-in of C10-M1 for C6-M1 (README 11): used only when C10-M1 has no address. Test data of C6-M1 README 14 / FRAMEWORK 7a.",
+  "subscriptions": [
+    {
+      "offerSubscriptionId": "d4e5f6a7-b8c9-4d0e-9f1a-2b3c4d5e6f70",
+      "status": "ACTIVE",
+      "providerCompanyId": "11111111-1111-4111-8111-111111111111",
+      "customerCompanyId": "c0000001-0000-4000-8000-000000000001"
+    }
+  ]
+}
