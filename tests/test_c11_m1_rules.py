@@ -155,6 +155,28 @@ def test_remembered_closer_is_forgotten_after_24_hours(monkeypatch):
     assert of_type("REVIEW_CASE_OPENED")[0]["done"] is False
 
 
+def test_a_later_closer_of_the_same_object_outlives_an_expired_one(monkeypatch):
+    start = dt.datetime(2026, 11, 6, 9, 31, tzinfo=dt.UTC)
+    monkeypatch.setattr(closing, "_now", lambda: start)
+    c11.on_event(approved(T2))
+    monkeypatch.setattr(closing, "_now", lambda: start + dt.timedelta(hours=23))
+    c11.on_event(approved(T1))   # another delivery path, same application, received 23 h later
+    monkeypatch.setattr(closing, "_now", lambda: start + dt.timedelta(hours=25))
+    c11.on_event(submitted(T0))
+    assert of_type("REVIEW_CASE_OPENED")[0]["done"] is True
+
+
+def test_expired_closers_are_dropped_from_memory(monkeypatch):
+    start = dt.datetime(2026, 11, 6, 9, 31, tzinfo=dt.UTC)
+    monkeypatch.setattr(closing, "_now", lambda: start)
+    for n in range(50):
+        c11.on_event(ev("c12-m1", "ProcessCompleted", T1, processId=f"p{n}"))
+    assert len(closing._by_key) == 50
+    monkeypatch.setattr(closing, "_now", lambda: start + closing.REMEMBER_FOR)
+    c11.on_event(ev("c12-m1", "ProcessCompleted", T1, processId="p-new"))
+    assert list(closing._by_key) == [("R17", ("processId",), ("p-new",))] and len(closing._expiry) == 1
+
+
 def test_event_without_time_counts_as_now():
     r2 = next(r for r in rules.RULES if r.id == "R2")
     closer = approved(T1)

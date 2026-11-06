@@ -57,6 +57,7 @@ MODULE = "c11-m1"
 COMPANY_ADMIN = "Company Admin"
 IT_ADMIN = "IT Admin"
 STUB_COMPANY_USERS = Path(__file__).with_name("stub-company-users.json")   # README 11.2, 14
+_stub_cache: tuple[int, dict] | None = None   # (file version, parsed table); replaced whole, so no lock
 
 
 def resolve(kind: str, data: dict) -> list[str]:
@@ -124,5 +125,14 @@ def _query(target: str, function: str, **params) -> list | dict | None:
 
 def _stub_company_users(company_id: str, portal_role: str) -> list[str]:
     """Built-in stand-in of C2-M2 (README 11.2): `companyId` -> portal role -> `sub` values."""
-    table = json.loads(STUB_COMPANY_USERS.read_text(encoding="utf-8"))
-    return list(table.get(company_id, {}).get(portal_role, []))
+    return list(_stub_table().get(company_id, {}).get(portal_role, []))
+
+
+def _stub_table() -> dict:
+    """The stand-in file, parsed once and again only when it changes on disk."""
+    global _stub_cache
+    version = STUB_COMPANY_USERS.stat().st_mtime_ns
+    cached = _stub_cache
+    if cached is None or cached[0] != version:
+        cached = _stub_cache = (version, json.loads(STUB_COMPANY_USERS.read_text(encoding="utf-8")))
+    return cached[1]

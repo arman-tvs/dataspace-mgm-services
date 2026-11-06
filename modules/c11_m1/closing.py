@@ -32,12 +32,17 @@ events delivered out of order). A task is then created `done` if the event that 
 occur later than the remembered closer (CloudEvents attribute `time`). After a retrigger the same
 step can fail again; that failure is later than the retrigger, so its new task stays open (13.6).
 
+Remembered closers are indexed by rule and object (`_by_key`) and expire in arrival order
+(`_expiry`), so checking a new task costs the same however many closers are remembered; every
+process end (`ProcessCompleted`) is one of them.
+
 An event without a valid `time` counts as received now (OPEN-QUESTIONS.md).
 """
 from __future__ import annotations
 
 import datetime as dt
 import logging
+from collections import deque
 
 from modules.c11_m1 import rules, store
 from modules.c11_m1.rules import Rule
@@ -45,7 +50,24 @@ from modules.c11_m1.rules import Rule
 log = logging.getLogger("portal.c11-m1")
 
 REMEMBER_FOR = dt.timedelta(hours=24)   # README 6.2
-_remembered: list[dict] = []            # {rule, key, time, until}; guarded by store.LOCK
+
+Key = tuple[str, tuple[str, ...], tuple]   # (rule id, closer fields, their values): one object of one rule
+
+
+def _closer_table() -> dict[str, list[tuple[str, tuple[str, ...]]]]:
+    """Closing event type -> (rule id, fields) from the fixed rule table (README 6.2)."""
+    table: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
+    for rule in rules.RULES:
+        for closer, fields in rule.closers:
+            if (rule.id, fields) not in table.setdefault(closer, []):
+                table[closer].append((rule.id, fields))
+    return table
+
+
+_CLOSERS = _closer_table()
+# Guarded by store.LOCK: remembered closers per object as (until, event time), and their expiry order.
+_by_key: dict[Key, list[tuple[dt.datetime, dt.datetime]]] = {}
+_expiry: deque[tuple[dt.datetime, Key]] = deque()
 
 
 def _now() -> dt.datetime:
@@ -65,44 +87,65 @@ def _parse(time: str | None) -> dt.datetime:
     return _now()
 
 
-def _matches(values: dict, key: dict) -> bool:
-    """Same object: every field of the closer has the same value."""
-    return all(values.get(f) == v for f, v in key.items())
+def _key(rule_id: str, fields: tuple[str, ...], data: dict) -> Key | None:
+    """The object of `data` for these closer fields; None if a field is missing."""
+    if any(data.get(f) is None for f in fields):
+        return None
+    return rule_id, fields, tuple(data[f] for f in fields)
 
 
 def handle(event: dict) -> None:
     """README 6.2: close the open tasks this event closes and remember it as a closer for 24 hours."""
-    event_type, data = event.get("type"), event.get("data") or {}
+    data = event.get("data") or {}
     at = _parse(event.get("time"))
     done_at = at.isoformat()
-    for rule in rules.RULES:
-        for closer, fields in rule.closers:
-            if closer != event_type or any(data.get(f) is None for f in fields):
-                continue
-            key = {f: data[f] for f in fields}
-            # One lock with engine._store: a new task is either created after the closer is
-            # remembered (and so created done) or exists before and is closed here.
-            with store.LOCK:
-                store.close_tasks(rule.id, lambda n, key=key: _matches(n["content"], key), done_at=done_at)
-                _remember(rule.id, key, at)
+    for rule_id, fields in _CLOSERS.get(event.get("type"), ()):
+        key = _key(rule_id, fields, data)
+        if key is None:
+            continue
+        match = dict(zip(fields, key[2]))
+        # One lock with engine._store: a new task is either created after the closer is
+        # remembered (and so created done) or exists before and is closed here.
+        with store.LOCK:
+            store.close_tasks(rule_id, lambda n, match=match: all(n["content"].get(f) == v for f, v in match.items()),
+                              done_at=done_at)
+            _remember(key, at)
 
 
-def _remember(rule_id: str, key: dict, at: dt.datetime) -> None:
+def _remember(key: Key, at: dt.datetime) -> None:
+    """Keep the closer for `REMEMBER_FOR` from now; the caller holds `store.LOCK`."""
     now = _now()
-    with store.LOCK:
-        _remembered[:] = [r for r in _remembered if r["until"] > now]
-        _remembered.append({"rule": rule_id, "key": key, "time": at, "until": now + REMEMBER_FOR})
+    _forget_expired(now)
+    until = now + REMEMBER_FOR
+    _by_key.setdefault(key, []).append((until, at))
+    _expiry.append((until, key))
+
+
+def _forget_expired(now: dt.datetime) -> None:
+    """Drop closers older than 24 hours, oldest first; the caller holds `store.LOCK`."""
+    while _expiry and _expiry[0][0] <= now:
+        _, key = _expiry.popleft()
+        kept = [e for e in _by_key.get(key, ()) if e[0] > now]
+        if kept:
+            _by_key[key] = kept
+        else:
+            _by_key.pop(key, None)
 
 
 def closed_before(rule: Rule, data: dict, time: str | None) -> bool:
     """README 6.2: True if a remembered closer of `rule` for the same object is not earlier than `time`."""
     created, now = _parse(time), _now()
     with store.LOCK:
-        return any(r["rule"] == rule.id and r["until"] > now and _matches(data, r["key"]) and created <= r["time"]
-                   for r in _remembered)
+        _forget_expired(now)
+        for fields in dict.fromkeys(fields for _, fields in rule.closers):
+            key = _key(rule.id, fields, data)
+            if key and any(until > now and created <= at for until, at in _by_key.get(key, ())):
+                return True
+    return False
 
 
 def reset() -> None:
     """Forget the remembered closing events (tests, `/scaffold/reset`)."""
     with store.LOCK:
-        _remembered.clear()
+        _by_key.clear()
+        _expiry.clear()
