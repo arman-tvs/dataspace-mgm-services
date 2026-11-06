@@ -23,8 +23,10 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""C11-M1 inbox API (README 7.1 to 7.5; acceptance 13.8 to 13.10). The stream of 7.6 (cases 13.13 to
-13.16) runs over a real HTTP server in `test_sse.py`."""
+"""C11-M1 inbox (README 7.1 to 7.5; acceptance 13.8 to 13.10), one section per file: listing.py
+and the HTTP layer of api.py. The stream of 7.6 (cases 13.13 to 13.16) runs over a real HTTP server
+in `test_sse.py`."""
+import datetime as dt
 import uuid
 
 import pytest
@@ -32,9 +34,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from conftest import BASE, bearer, person_token
-from modules.c11_m1 import store, worker
+from modules.c11_m1 import listing, store, worker
 from modules.c11_m1 import router as c11
-from portal_common import events, problems
+from portal_common import events, problems, tokens
 from portal_common import http as phttp
 from tools import test_iam
 
@@ -54,6 +56,95 @@ def _fresh(monkeypatch):
     c11.reset()
 
 
+def submitted() -> dict:
+    return events.cloudevent("c1-m2", "ApplicationSubmitted", {
+        "applicationId": APPLICATION, "companyId": COMPANY, "kind": "ONBOARDING", "existingCompany": False,
+        "applicantSub": test_iam.iam().find("erika")}, time="2026-11-06T09:30:00Z")
+
+
+def change_request(etype: str = "CompanyChangeRequestSubmitted", **extra) -> dict:
+    return events.cloudevent("c3-m1", etype, {"companyId": COMPANY, "changeRequestId": CHANGE_REQUEST} | extra,
+                             time="2026-11-06T09:30:00Z")
+
+
+def claims(sub: str, *perms: str) -> dict:
+    """Token claims without HTTP: the `sub` and the permissions of the person."""
+    return {"sub": sub, "resource_access": {tokens.AUDIENCE: {"roles": list(perms)}}}
+
+
+def three_change_requests() -> list[str]:
+    """Three R5 tasks for staff with `review_company_changes`, created 09:30, 09:31 and 09:32."""
+    for i in range(3):
+        c11.on_event(change_request(changeRequestId=str(uuid.UUID(int=i + 1))))
+    for i, n in enumerate(store.notifications):   # fixed times make the order deterministic
+        n["createdAt"] = f"2026-11-06T09:3{i}:00+00:00"
+    return [n["notificationId"] for n in store.notifications]
+
+
+def of_type(ntype: str) -> dict:
+    [n] = [n for n in store.notifications if n["type"] == ntype]
+    return n
+
+
+# ---------------------------------------------------------------- listing.py: the list query
+
+
+def view(**fields) -> dict:
+    """A `Notification` view with the fields the filters read."""
+    return {"topic": "INFO", "type": "APPLICATION_SUBMITTED", "read": False, "done": None,
+            "createdAt": "2026-11-06T09:30:00+00:00"} | fields
+
+
+def everything(*, newest_first: bool, page: int = 0, size: int = 20) -> dict:
+    """The inbox of a change reviewer without filters."""
+    return listing.list_page(claims("rolf", "review_company_changes"), listing.Filters(),
+                             newest_first=newest_first, page=page, size=size)
+
+
+def ids(page: dict) -> list[str]:
+    return [v["notificationId"] for v in page["items"]]
+
+
+def test_no_filter_matches_everything():
+    assert listing.Filters().matches(view())
+
+
+@pytest.mark.parametrize("filters, match, other", [
+    (listing.Filters(topic="ACTION"), view(topic="ACTION", done=False), view()),
+    (listing.Filters(ntype="APPLICATION_COMPLETED"), view(type="APPLICATION_COMPLETED"), view()),
+    (listing.Filters(read=True), view(read=True), view()),
+    (listing.Filters(done=False), view(topic="ACTION", done=False), view(topic="ACTION", done=True)),
+])
+def test_each_filter_keeps_only_matching_notifications(filters, match, other):
+    assert filters.matches(match) and not filters.matches(other)
+
+
+def test_done_filter_leaves_information_out():
+    assert not listing.Filters(done=False).matches(view()) and not listing.Filters(done=True).matches(view())
+
+
+def test_created_since_includes_its_own_time_and_reads_no_offset_as_utc():
+    since = listing.Filters(created_since=dt.datetime(2026, 11, 6, 9, 30))   # no offset: UTC
+    assert since.matches(view(createdAt="2026-11-06T09:30:00+00:00"))
+    assert not since.matches(view(createdAt="2026-11-06T09:29:59+00:00"))
+
+
+def test_sorts_newest_first_or_oldest_first():
+    first, second, third = three_change_requests()
+    assert ids(everything(newest_first=True)) == [third, second, first]
+    assert ids(everything(newest_first=False)) == [first, second, third]
+
+
+def test_pages_slice_the_list_and_total_counts_all_matches():
+    *_, third = three_change_requests()
+    page = everything(newest_first=False, page=1, size=2)
+    assert page == {"items": page["items"], "page": 1, "size": 2, "total": 3} and ids(page) == [third]
+    assert everything(newest_first=False, page=5, size=2)["items"] == []
+
+
+# ---------------------------------------------------------------- api.py: the HTTP layer
+
+
 @pytest.fixture
 def client():
     app = FastAPI()
@@ -66,17 +157,6 @@ def client():
 
 def call(client, method: str, path: str, person: str, **kw):
     return client.request(method, API + path, headers=bearer(person_token(person)), **kw)
-
-
-def submitted() -> dict:
-    return events.cloudevent("c1-m2", "ApplicationSubmitted", {
-        "applicationId": APPLICATION, "companyId": COMPANY, "kind": "ONBOARDING", "existingCompany": False,
-        "applicantSub": test_iam.iam().find("erika")}, time="2026-11-06T09:30:00Z")
-
-
-def change_request(etype: str = "CompanyChangeRequestSubmitted", **extra) -> dict:
-    return events.cloudevent("c3-m1", etype, {"companyId": COMPANY, "changeRequestId": CHANGE_REQUEST} | extra,
-                             time="2026-11-06T09:30:00Z")
 
 
 def only(client, person: str, ntype: str) -> dict:
