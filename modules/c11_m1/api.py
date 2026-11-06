@@ -24,7 +24,7 @@
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
 """HTTP operations on the own inbox (README 7): token, permission and parameters, then `inbox`
-(what the caller sees) and `marks` (the caller's read and hidden state).
+(what the caller sees), `listing` (the list query) and `marks` (the caller's read and hidden state).
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
-from modules.c11_m1 import inbox, marks, store
+from modules.c11_m1 import inbox, listing, marks, store
 from portal_common import problems, spec, sse, tokens
 
 MODULE = "c11-m1"
@@ -43,20 +43,6 @@ router = APIRouter(prefix=spec.module(MODULE).base_path, route_class=problems.ro
 def _perm(method: str, path: str):
     """The permission of the spec operation (`x-permission`, here `view_notifications`); returns the claims."""
     return Depends(tokens.require_spec(MODULE, method, path))
-
-
-def _utc(value: str | dt.datetime) -> dt.datetime:
-    """A time as an aware datetime; a time without offset counts as UTC (FRAMEWORK 4.1)."""
-    t = dt.datetime.fromisoformat(value) if isinstance(value, str) else value
-    return t if t.tzinfo else t.replace(tzinfo=dt.UTC)
-
-
-def _matches(v: dict, topic: str | None, ntype: str | None, read: bool | None, done: bool | None,
-             since: dt.datetime | None) -> bool:
-    """README 7.1 filters; `done` applies to tasks only, so it leaves information out."""
-    return ((topic is None or v["topic"] == topic) and (ntype is None or v["type"] == ntype)
-            and (read is None or v["read"] == read) and (done is None or v["done"] is done)
-            and (since is None or _utc(v["createdAt"]) >= since))
 
 
 @router.get("/notifications")
@@ -70,10 +56,8 @@ def list_notifications(claims: dict = _perm("GET", "/notifications"),
                        page: Annotated[int, Query(ge=0)] = 0,
                        size: Annotated[int, Query(ge=1, le=100)] = 20):
     """README 7.1: filters, sorting by `createdAt`, paging as in FRAMEWORK 4.1; invalid filters give 400."""
-    since = _utc(createdSince) if createdSince else None
-    items = [v for v in inbox.own(claims) if _matches(v, topic, ntype, read, done, since)]
-    items.sort(key=lambda v: _utc(v["createdAt"]), reverse=sort == "createdAt.desc")
-    return {"items": items[page * size:(page + 1) * size], "page": page, "size": size, "total": len(items)}
+    filters = listing.Filters(topic, ntype, read, done, createdSince)
+    return listing.list_page(claims, filters, newest_first=sort == "createdAt.desc", page=page, size=size)
 
 
 @router.get("/notifications/count")
