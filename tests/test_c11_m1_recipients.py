@@ -26,6 +26,7 @@
 """C11-M1 recipients (README 6.1, 11.2; acceptance 13.12): the four kinds, the built-in stand-in of
 C2-M2, the IT Admin fallback and the retry rule for neighbour errors (README 4)."""
 import pytest
+from conftest import needs_admin_api
 
 from modules.c11_m1 import recipients, store
 from modules.c11_m1 import router as c11
@@ -108,6 +109,7 @@ def test_standin_c10_is_an_empty_list(monkeypatch, fake):
 
 # ---- C2-M2 over the call convention (in-process here)
 
+@needs_admin_api
 def test_in_process_c2_m2_reads_the_bound_people():
     """The scaffold's C2-M2 stand-in answers from the test IAM, where Pia is the OSP company's Company Admin."""
     assert recipients.resolve("company_role:providerCompanyId:Company Admin",

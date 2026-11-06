@@ -80,8 +80,11 @@ def handle(event: dict) -> None:
             if closer != event_type or any(data.get(f) is None for f in fields):
                 continue
             key = {f: data[f] for f in fields}
-            store.close_tasks(rule.id, lambda n, key=key: _matches(n["content"], key), done_at=done_at)
-            _remember(rule.id, key, at)
+            # One lock with engine._store: a new task is either created after the closer is
+            # remembered (and so created done) or exists before and is closed here.
+            with store.LOCK:
+                store.close_tasks(rule.id, lambda n, key=key: _matches(n["content"], key), done_at=done_at)
+                _remember(rule.id, key, at)
 
 
 def _remember(rule_id: str, key: dict, at: dt.datetime) -> None:
