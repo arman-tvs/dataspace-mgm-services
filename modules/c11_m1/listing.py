@@ -43,19 +43,24 @@ class Filters:
     done: bool | None = None
     created_since: dt.datetime | None = None
 
-    def matches(self, v: dict) -> bool:
-        """True if the view `v` passes every filter that is set."""
+    def __post_init__(self) -> None:
+        if self.created_since is not None:   # normalised once, not once per view
+            object.__setattr__(self, "created_since", _utc(self.created_since))
+
+    def matches(self, v: dict, created: dt.datetime | None = None) -> bool:
+        """True if the view `v` passes every filter that is set; `created` is its parsed `createdAt`, if known."""
         return ((self.topic is None or v["topic"] == self.topic)
                 and (self.ntype is None or v["type"] == self.ntype)
                 and (self.read is None or v["read"] == self.read)
                 and (self.done is None or v["done"] is self.done)
-                and (self.created_since is None or _utc(v["createdAt"]) >= _utc(self.created_since)))
+                and (self.created_since is None or (created or _utc(v["createdAt"])) >= self.created_since))
 
 
 def list_page(views: list[dict], filters: Filters, *, newest_first: bool, page: int, size: int) -> dict:
-    """README 7.1: schema `NotificationPage` of the views that match `filters`."""
-    items = sorted((v for v in views if filters.matches(v)),
-                   key=lambda v: _utc(v["createdAt"]), reverse=newest_first)
+    """README 7.1: schema `NotificationPage` of the views that match `filters`; each `createdAt` is parsed once."""
+    timed = [(created, v) for v in views if filters.matches(v, created := _utc(v["createdAt"]))]
+    timed.sort(key=lambda cv: cv[0], reverse=newest_first)
+    items = [v for _, v in timed]
     return {"items": items[page * size:(page + 1) * size], "page": page, "size": size, "total": len(items)}
 
 
