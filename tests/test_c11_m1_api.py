@@ -23,7 +23,7 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""C11-M1 inbox (README 7.1 to 7.5; acceptance 13.8 to 13.10), one section per file: listing.py, marks.py
+"""C11-M1 inbox (README 7.1 to 7.5; acceptance 13.8 to 13.10), one section per file: inbox.py, listing.py, marks.py
 and the HTTP layer of api.py. The stream of 7.6 (cases 13.13 to 13.16) runs over a real HTTP server
 in `test_sse.py`."""
 import datetime as dt
@@ -34,7 +34,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from conftest import BASE, bearer, person_token
-from modules.c11_m1 import listing, marks, store, worker
+from modules.c11_m1 import inbox, listing, marks, store, worker
 from modules.c11_m1 import router as c11
 from portal_common import events, problems, tokens
 from portal_common import http as phttp
@@ -85,6 +85,56 @@ def three_change_requests() -> list[str]:
 def of_type(ntype: str) -> dict:
     [n] = [n for n in store.notifications if n["type"] == ntype]
     return n
+
+
+# ---------------------------------------------------------------- inbox.py: what a person's inbox contains
+
+
+def applicant() -> dict:
+    return claims(test_iam.iam().find("erika"))
+
+
+def test_personal_notifications_go_to_their_sub_and_staff_ones_to_the_permission():
+    c11.on_event(submitted())
+    assert [v["type"] for v in inbox.own(applicant())] == ["APPLICATION_SUBMITTED"]
+    assert [v["type"] for v in inbox.own(claims("rolf", "review_application"))] == ["REVIEW_CASE_OPENED"]
+    assert inbox.own(claims("lieschen")) == []
+
+
+def test_a_view_is_the_notification_schema_with_read_for_the_caller():
+    c11.on_event(submitted())
+    n = of_type("APPLICATION_SUBMITTED")
+    marks.mark_read(n, applicant()["sub"])
+    v = inbox.get(n["notificationId"], applicant())
+    assert set(v) == {"notificationId", "type", "topic", "companyId", "subjectType", "subjectId", "content",
+                      "forStaff", "read", "done", "createdAt", "doneAt"}   # openapi `Notification`
+    assert (v["read"], v["subjectId"], v["companyId"]) == (True, APPLICATION, COMPANY)
+
+
+def test_hidden_notifications_are_left_out_of_the_own_inbox():
+    c11.on_event(submitted())
+    n = of_type("APPLICATION_SUBMITTED")
+    marks.hide(n, applicant()["sub"])
+    assert inbox.own(applicant()) == [] and inbox.get(n["notificationId"], applicant())["notificationId"]
+
+
+def test_another_persons_notification_is_not_found():
+    """Acceptance 13.10."""
+    c11.on_event(submitted())
+    n = of_type("APPLICATION_SUBMITTED")
+    for who in (claims("lieschen"), claims("rolf", "review_application")):
+        with pytest.raises(Problem) as e:
+            inbox.find(n["notificationId"], who)
+        assert (e.value.status, e.value.name) == (404, "not-found")
+
+
+def test_count_of_the_own_inbox():
+    c11.on_event(submitted())
+    reviewer = claims("rolf", "review_application")
+    assert inbox.count(applicant()) == {"total": 1, "unread": 1, "openTasks": 0, "unreadInfo": 1}
+    assert inbox.count(reviewer) == {"total": 1, "unread": 1, "openTasks": 1, "unreadInfo": 0}
+    marks.mark_read(of_type("APPLICATION_SUBMITTED"), applicant()["sub"])
+    assert inbox.count(applicant()) == {"total": 1, "unread": 0, "openTasks": 0, "unreadInfo": 0}
 
 
 # ---------------------------------------------------------------- listing.py: the list query
