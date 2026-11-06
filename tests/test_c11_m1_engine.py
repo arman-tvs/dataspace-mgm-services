@@ -90,6 +90,16 @@ def test_same_event_id_twice_creates_no_second_notification():
     assert len(c11.notifications) == 2
 
 
+def test_the_same_id_from_another_source_is_another_event():
+    """CloudEvents identify an event by `source` and `id` (FRAMEWORK 6): one module cannot suppress another's."""
+    failed = ev("c12-m1", "ProcessStepFailed", processId=PROCESS, stepKey="register-company")
+    other = events.cloudevent("c1-m2", "ApplicationSubmitted", submitted()["data"], id=failed["id"])
+    c11.on_event(failed)
+    c11.on_event(other)
+    assert sorted(n["type"] for n in c11.notifications) == \
+        ["APPLICATION_SUBMITTED", "PROCESS_STEP_FAILED", "REVIEW_CASE_OPENED"]
+
+
 def test_approval_closes_the_review_task_for_everyone():
     c11.on_event(submitted())
     c11.on_event(ev("c1-m3", "ApplicationApproved", applicationId=APPLICATION, companyId=COMPANY))

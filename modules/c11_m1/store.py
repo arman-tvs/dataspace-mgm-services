@@ -45,13 +45,18 @@ LOCK = threading.RLock()
 notifications: list[dict] = []           # README 5 `notification`; items carry `sourceEventId` (tests/test_sse.py)
 state: dict[tuple[str, str], dict] = {}  # README 5 `notification_state`: (notificationId, sub) -> {readAt, hiddenAt}
 applicants: dict[str, str] = {}          # README 5 `applicant`: applicationId -> applicantSub
-processed: dict[str, dict] = {}          # README 5 `processed_event`: event id -> {type, receivedAt, status}
-_dedup: set[tuple[str, str, str]] = set()  # README 5 `dedup_key`: (rule, event id, receiver)
+processed: dict[tuple[str, str], dict] = {}   # README 5 `processed_event`: (source, id) -> {type, receivedAt, status}
+_dedup: set[tuple[str, str, str, str]] = set()  # README 5 `dedup_key`: (rule, source, event id, receiver)
 BROKER = sse.Broker()                    # README 7.6 stream events of the own inbox
 
 
 class Unavailable(Exception):
     """A neighbour (C2-M2, C10-M1) is not reachable; the worker retries the job (README 4)."""
+
+
+def event_key(event: dict) -> tuple[str, str]:
+    """The identity of a CloudEvent: `source` and `id` together (FRAMEWORK 6)."""
+    return str(event.get("source")), str(event.get("id"))
 
 
 def now() -> str:
@@ -70,7 +75,7 @@ def add_notification(event: dict, rule: Rule, *, receiver_sub: str | None = None
         raise ValueError("give exactly one of receiver_sub and receiver_permission")
     data = event.get("data") or {}
     receiver = receiver_sub if receiver_sub is not None else f"permission:{receiver_permission}"
-    key = (rule.id, str(event.get("id")), receiver)
+    key = (rule.id, *event_key(event), receiver)
     is_task = rule.topic == "ACTION"
     created = now()
     with LOCK:

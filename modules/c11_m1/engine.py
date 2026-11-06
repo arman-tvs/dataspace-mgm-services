@@ -50,15 +50,17 @@ def disabled_rules() -> set[str]:
 
 
 def handle(event: dict) -> None:
-    """Process one CloudEvent of the relay (FRAMEWORK 6) once per `id` (README 6.4)."""
+    """Process one CloudEvent of the relay (FRAMEWORK 6) once per `source` and `id` (README 6.4;
+    CloudEvents identifies an event by both, so two modules may use the same `id`)."""
     event_id, event_type = event.get("id"), event.get("type")
     if not event_id or not event_type:
         log.warning("event without id or type ignored")
         return
+    key = store.event_key(event)
     with store.LOCK:
-        if event_id in store.processed:
+        if key in store.processed:
             return
-        store.processed[event_id] = {"type": event_type, "receivedAt": store.now(), "status": "DONE"}
+        store.processed[key] = {"type": event_type, "receivedAt": store.now(), "status": "DONE"}
     data = event.get("data") or {}
 
     closing.handle(event)
@@ -75,7 +77,7 @@ def handle(event: dict) -> None:
         except Exception:   # one broken rule must not stop the others of the same event
             log.exception("rule %s failed for event %s", rule.id, event_id)
             with store.LOCK:
-                store.processed[event_id]["status"] = "FAILED"
+                store.processed[key]["status"] = "FAILED"
 
     if event_type in _APPLICATION_ENDED:
         with store.LOCK:
