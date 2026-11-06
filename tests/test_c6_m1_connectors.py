@@ -396,3 +396,57 @@ def test_concurrent_endpoint_change_and_registration(api, monkeypatch):
     assert problem(out["reg"] if out["reg"].status_code == 409 else out["patch"], 409, "duplicate")
     live = [(c["name"], c["endpoint"]) for c in interface.connectors.values() if c["status"] == "ACTIVE"]
     assert len(live) == len(set(live))
+
+
+def test_endpoint_with_user_information_is_400_and_not_echoed(api):
+    secret_url = "https://user:s3cret@edc.example/dsp"
+    r = register(api, endpoint=secret_url)
+    assert problem(r, 400, "validation") and "s3cret" not in r.text
+    assert not published("ConnectorRegistered")
+    con = register(api).json()["connectorId"]
+    r = api.patch(f"{BASE_PATH}/connectors/{con}", headers=h("erika"), json={"endpoint": secret_url})
+    assert problem(r, 400, "validation") and "s3cret" not in r.text and not published("ConnectorEndpointChanged")
+
+
+@pytest.mark.parametrize("endpoint", ["https://:443/dsp", "https://edc.example:invalid/dsp"])
+def test_endpoint_without_hostname_or_with_invalid_port_is_400(api, endpoint):
+    assert problem(register(api, endpoint=endpoint), 400, "validation")
+
+
+def test_no_connector_for_a_subscription_after_step_8_1(api):
+    interface.stub_subscriptions[SUB] = interface.stub_subscriptions[SUB] | {"status": "PENDING"}   # read before decline
+    step = {"processId": PROCESS, "stepRunId": RUN_1, "offerSubscriptionId": SUB}
+    r = api.post(f"{BASE_PATH}/steps/deactivate-subscription-connectors", headers=svc("c12-m1"), json=step)
+    assert r.json()["result"] == {"connectorIds": []}
+    assert problem(register_caas(api), 409, "invalid-state")
+    assert not interface.connectors and not published("ConnectorRegistered")
+
+
+def test_internal_query_rejects_a_technical_user_id_that_is_no_uuid(api):
+    r = api.get(f"{BASE_PATH}/internal/connectors", params={"technicalUserId": "not-a-uuid"}, headers=svc("c2-m3"))
+    assert problem(r, 400, "validation")
+
+
+def test_delete_asks_c10_m1_outside_the_lock(api, monkeypatch):
+    from modules.c6_m1 import service
+    con = register_caas(api).json()["connectorId"]
+    interface.stub_subscriptions[SUB] = interface.stub_subscriptions[SUB] | {"status": "INACTIVE"}
+    asked, release = threading.Event(), threading.Event()
+    real = service.subscription
+
+    def slow_subscription(sub_id):
+        asked.set()
+        release.wait(timeout=5)       # a slow C10-M1
+        return real(sub_id)
+    monkeypatch.setattr(service, "subscription", slow_subscription)
+    out = {}
+    t = threading.Thread(target=lambda: out.setdefault("delete", api.delete(f"{BASE_PATH}/connectors/{con}",
+                                                                            headers=h("pia"))))
+    t.start()
+    assert asked.wait(timeout=5)
+    acquired = interface.LOCK.acquire(timeout=1)   # other requests are not blocked meanwhile
+    if acquired:
+        interface.LOCK.release()
+    release.set()
+    t.join()
+    assert acquired and out["delete"].status_code == 204 and interface.connectors[con]["status"] == "INACTIVE"
