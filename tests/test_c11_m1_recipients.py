@@ -25,6 +25,8 @@
 #################################################################################
 """C11-M1 recipients (README 6.1, 11.2; acceptance 13.12): the four kinds, the built-in stand-in of
 C2-M2, the IT Admin fallback and the retry rule for neighbour errors (README 4)."""
+import os
+
 import pytest
 from conftest import needs_admin_api
 
@@ -97,6 +99,22 @@ def test_standin_without_it_admin_falls_back_to_company_admin(standin_c2_m2):
 def test_standin_unknown_company_or_role_is_nobody(standin_c2_m2):
     assert recipients.resolve("company_role:companyId:Company Admin", {"companyId": "unknown"}) == []
     assert recipients.resolve("company_role:companyId:IT Admin", {"companyId": COMPANY}) == []
+
+
+def test_standin_file_is_parsed_once_and_again_after_a_change(standin_c2_m2, monkeypatch, tmp_path):
+    stub = tmp_path / "stub-company-users.json"
+    stub.write_text('{"%s": {"Company Admin": ["a"]}}' % COMPANY, encoding="utf-8")
+    monkeypatch.setattr(recipients, "STUB_COMPANY_USERS", stub)
+    monkeypatch.setattr(recipients, "_stub_cache", None)
+    loads = []
+    real_loads = recipients.json.loads
+    monkeypatch.setattr(recipients.json, "loads", lambda s: loads.append(1) or real_loads(s))
+    kind, data = "company_role:companyId:Company Admin", {"companyId": COMPANY}
+    assert recipients.resolve(kind, data) == ["a"] and recipients.resolve(kind, data) == ["a"]
+    assert len(loads) == 1
+    stub.write_text('{"%s": {"Company Admin": ["b"]}}' % COMPANY, encoding="utf-8")
+    os.utime(stub, ns=(stub.stat().st_atime_ns, stub.stat().st_mtime_ns + 1_000_000))
+    assert recipients.resolve(kind, data) == ["b"] and len(loads) == 2
 
 
 def test_standin_c10_is_an_empty_list(monkeypatch, fake):
