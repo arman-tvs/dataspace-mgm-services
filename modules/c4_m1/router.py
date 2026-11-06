@@ -22,29 +22,24 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""Stand-in of C4-M1 Credentials: `issue-credentials`, status reports of issuers, credential queries.
+"""HTTP layer of C4-M1 Credentials (README 6.5, 7, 8, 9): token, permission, then the interface function.
 
-Route as in C4-M1 6.3, from `ISSUER_MODE` (`module-config.json` of the installation):
-- `STUB` (11.6), credentials are issued at once: `OWN` with empty `ISSUER_ROUTES`, `CSP` with empty
-  `CSP_ISSUER_URL`, or a wallet of provider `STUB`. At the hackathon OSP A and OSP B both run on
-  this route (OP-53).
-- `CSP_ISSUER` (11.5), `CSP` with `CSP_ISSUER_URL` and a wallet with `HOLDER_REQUESTS`: register
-  the holder, set the grants with `callbackUrl` = `{BASE_URL}/api/c4-m1/issuer-callbacks/{kind}`,
-  request the credentials in the holder's wallet (holder access from C4-M2); the CSP reports to
-  `/issuer-callbacks/{kind}`. Target for the Community Days, not used at the hackathon (OP-53).
-- `OWN` with `ISSUER_ROUTES`: the routes of an own issuer are not in the stand-in (409 `no-issuer-route`).
+Operations that this router does not implement are answered by the spec-driven fallback of the scaffold.
 """
 from __future__ import annotations
 
-from fastapi import Body
+import datetime as dt
+import uuid
+from typing import Literal
 
-from portal_common import events, standin
-from portal_common.problems import Problem
+from fastapi import Body, Query
+from fastapi.responses import Response
 
-from . import interface
-from .interface import MODULE, all_issued, credentials
+from portal_common import standin
 
-STANDIN = True
+from . import interface, service
+from .interface import MODULE
+
 router = standin.router(MODULE)
 
 
@@ -57,22 +52,19 @@ def issue(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps
     return interface.issue_credentials(body)
 
 
-@router.post("/issuer-callbacks/{credentialKind}")
+@router.post("/steps/revoke-credentials")
+def revoke(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/revoke-credentials")):
+    return interface.revoke_credentials(body)
+
+
+@router.post("/issuer-callbacks/{credentialKind}", status_code=204, response_class=Response)
 def issuer_callback(credentialKind: str, body: dict = Body(...),
-                    _: dict = standin.perm(MODULE, "POST", "/issuer-callbacks/{credentialKind}")):
-    t = credentialKind.upper()
-    cid = next((c for c, creds in credentials.items() if (creds.get(t) or {}).get("bpn") == body.get("bpn")), None)
-    if cid is None:
-        raise Problem(MODULE, 404, "not-found")
-    cred = credentials[cid][t]
-    if cred["status"] == "PENDING":
-        if body.get("status") == "SUCCESSFUL":
-            cred["status"] = "ISSUED"
-            all_issued(cid)
-        else:
-            cred["status"] = "FAILED"
-            events.publish(MODULE, "CredentialIssuanceFailed", {"companyId": cid, "credentialType": t})
-    return {"credentialType": t, "status": cred["status"]}
+                    claims: dict = standin.perm(MODULE, "POST", "/issuer-callbacks/{credentialKind}")):
+    """README 7.4: token and permission (dependency), kind, body, row handling, audit entry, 204 without body."""
+    bpn, status, message = service.validate_report(credentialKind, body)
+    interface.report_status(credentialKind, bpn, status, message)
+    service.audit(claims, "REPORT_CREDENTIAL_STATUS", None, f"{bpn}:{credentialKind.upper()}", 204)
+    return Response(status_code=204)
 
 
 @router.get("/internal/companies/{companyId}/credentials")
@@ -83,5 +75,28 @@ def query_credentials(companyId: str,
 
 @router.get("/companies/{companyId}/credentials")
 def own_credentials(companyId: str, claims: dict = standin.perm(MODULE, "GET", "/companies/{companyId}/credentials")):
+    """README 7.1; order of checks per 6.5: token, permission, then `company_id` of the token = `companyId`."""
     standin.company_scope(MODULE, claims, companyId)
-    return interface.query_company_credentials(companyId=companyId)["credentials"]   # 7.1: list
+    return service.list_company_credentials(companyId)
+
+
+@router.get("/credentials")
+def list_credentials(page: int = Query(0, ge=0), size: int = Query(20, ge=1, le=100),
+                     status: list[Literal["REQUESTED", "ISSUED", "FAILED", "CANCELLED", "REVOCATION_PENDING",
+                                          "REVOKED"]] | None = Query(None),
+                     credentialType: Literal["BPN", "MEMBERSHIP"] | None = None,
+                     companyId: uuid.UUID | None = None,
+                     route: Literal["CREDENTIAL_ISSUER", "ISSUER_SERVICE", "CSP_ISSUER", "STUB"] | None = None,
+                     requestedBefore: dt.datetime | None = None,
+                     _: dict = standin.perm(MODULE, "GET", "/credentials")):
+    """README 7.2 (OSP staff, `manage_credentials`)."""
+    return interface.list_credentials(statuses=status, credential_type=credentialType,
+                                      company_id=str(companyId) if companyId else None, route=route,
+                                      requested_before=requestedBefore, page=page, size=size)
+
+
+@router.post("/credentials/{credentialId}/confirm-revocation")
+def confirm_revocation(credentialId: str, body: dict = Body(...),
+                       claims: dict = standin.perm(MODULE, "POST", "/credentials/{credentialId}/confirm-revocation")):
+    """README 7.3 (OSP staff, `manage_credentials`)."""
+    return interface.confirm_revocation(credentialId, body, claims)

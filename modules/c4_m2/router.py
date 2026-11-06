@@ -22,22 +22,23 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""Stand-in of C4-M2 Dataspace Wallet Interface: `create-wallet` and the wallet queries.
+"""HTTP layer of C4-M2 Dataspace Wallet Interface: token, permission and scope, then the interface function.
 
-Provider: the dataspace wallet of the CSP when `CSP_WALLET_URL` is set (C4-M2 11.3, e.g. the
-shared CSP stand-in `/wallet/v1`), otherwise `STUB` (DID `did:web:wallet.example.org:<BPN>`).
-The holder access (API key) stays in memory and is only returned by the query for C4-M1.
+Routes of this file: `POST /steps/create-wallet`, `GET /companies/{companyId}/wallet`,
+`GET /internal/wallets/{companyId}` and `GET /internal/wallets/{companyId}/holder-access`. The wallet
+account routes (`accounts.router`) and the SAP DIV callback routes (`providers.callback_routers()`) belong
+to other files of the module and are mounted here when those files exist. Operations that are not
+implemented yet are answered by the scaffold from the spec.
 """
 from __future__ import annotations
 
-from fastapi import Body
+from fastapi import Body, Response
 
 from portal_common import standin
 
-from . import interface
+from . import interface, service
 from .interface import MODULE
 
-STANDIN = True
 router = standin.router(MODULE)
 
 
@@ -45,9 +46,20 @@ def reset() -> None:
     interface.reset()
 
 
+def on_startup() -> None:
+    """Start the scheduled tasks of README 6.10."""
+    service.start_timer()
+
+
 @router.post("/steps/create-wallet")
 def create_wallet(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/create-wallet")):
     return interface.create_wallet(body)
+
+
+@router.get("/companies/{companyId}/wallet")
+def own_wallet(companyId: str, claims: dict = standin.perm(MODULE, "GET", "/companies/{companyId}/wallet")):
+    standin.company_scope(MODULE, claims, companyId)
+    return interface.wallet_view(companyId=companyId)
 
 
 @router.get("/internal/wallets/{companyId}")
@@ -56,11 +68,21 @@ def get_wallet(companyId: str, _: dict = standin.perm(MODULE, "GET", "/internal/
 
 
 @router.get("/internal/wallets/{companyId}/holder-access")
-def holder_access(companyId: str, _: dict = standin.perm(MODULE, "GET", "/internal/wallets/{companyId}/holder-access")):
-    return interface.get_holder_access(companyId=companyId)
+def holder_access(companyId: str, response: Response,
+                  claims: dict = standin.perm(MODULE, "GET", "/internal/wallets/{companyId}/holder-access")):
+    response.headers["Cache-Control"] = "no-store"
+    return interface.get_holder_access(companyId=companyId, claims=claims)
 
 
-@router.get("/companies/{companyId}/wallet")
-def own_wallet(companyId: str, claims: dict = standin.perm(MODULE, "GET", "/companies/{companyId}/wallet")):
-    standin.company_scope(MODULE, claims, companyId)
-    return interface.get_wallet_info(companyId=companyId)
+def _mount_other_files() -> None:
+    """Wallet accounts and SAP DIV callbacks are written in `accounts.py` and `providers.py`."""
+    accounts = service.optional_module("accounts")
+    if accounts is not None and hasattr(accounts, "router"):
+        router.include_router(accounts.router)
+    providers = service.providers_module()
+    if providers is not None and hasattr(providers, "callback_routers"):
+        for callback_router in providers.callback_routers():
+            router.include_router(callback_router)
+
+
+_mount_other_files()

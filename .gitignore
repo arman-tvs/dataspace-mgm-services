@@ -59,3 +59,10 @@ PACKAGE
 .vscode/
 *.iml
 .DS_Store
+
+# Local AI context (working notes for an assistant, never committed)
+context-ai.md
+.opencode/
+
+# Team 3 working plan - TEAM3-PLAN.md line 28: "lives outside the repo on purpose ... do not commit it"
+TEAM3-PLAN.md
