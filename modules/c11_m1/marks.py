@@ -31,9 +31,8 @@ another's (acceptance 13.9). Every function takes a stored notification of the c
 from __future__ import annotations
 
 from modules.c11_m1 import store
+from modules.c11_m1.interface import MODULE
 from portal_common.problems import Problem
-
-MODULE = "c11-m1"
 
 
 def is_read(n: dict, sub: str | None) -> bool:

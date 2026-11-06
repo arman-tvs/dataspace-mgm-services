@@ -32,9 +32,9 @@ the token; hidden ones are left out. Notifications are shown as the schema `Noti
 from __future__ import annotations
 
 from modules.c11_m1 import marks, store
+from modules.c11_m1.interface import MODULE
 from portal_common.problems import Problem
 
-MODULE = "c11-m1"
 FIELDS = ("notificationId", "type", "topic", "companyId", "subjectType", "subjectId", "content", "forStaff",
           "done", "createdAt", "doneAt")   # openapi `Notification`, apart from `read`, which is per person
 
