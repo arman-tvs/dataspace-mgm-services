@@ -28,7 +28,7 @@ import threading
 
 import pytest
 
-from modules.c11_m1 import recipients, store, worker
+from modules.c11_m1 import recipients, rules, store, worker
 from modules.c11_m1 import router as c11
 from portal_common import events, tokens
 
@@ -134,6 +134,25 @@ def test_processed_events_and_dedup_keys_are_bounded_oldest_first(monkeypatch):
         c11.on_event(event)
     assert list(store.processed) == [store.event_key(e) for e in sent[2:]]
     assert len(store._dedup) == 3 and len(c11.notifications) == 5   # notifications themselves stay
+
+
+def test_notifications_are_stored_in_created_order_across_threads():
+    """The relay and the worker store at the same time; the list order must match `createdAt`."""
+    rule = next(r for r in rules.RULES if r.id == "R17")
+    barrier = threading.Barrier(8)
+
+    def store_many(n: int):
+        barrier.wait()
+        for i in range(200):
+            store.add_notification(ev("c12-m1", "ProcessStepFailed", processId=f"{n}-{i}", stepKey="s"), rule,
+                                   receiver_permission="retrigger_process_steps")
+    threads = [threading.Thread(target=store_many, args=(n,)) for n in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    created = [n["createdAt"] for n in c11.notifications]
+    assert len(created) == 1600 and created == sorted(created)
 
 
 def test_approval_closes_the_review_task_for_everyone():

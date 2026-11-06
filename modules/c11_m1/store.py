@@ -103,11 +103,11 @@ def add_notification(event: dict, rule: Rule, *, receiver_sub: str | None = None
     receiver = receiver_sub if receiver_sub is not None else f"permission:{receiver_permission}"
     key = (rule.id, *event_key(event), receiver)
     is_task = rule.topic == "ACTION"
-    created = now()
     with LOCK:
         if key in _dedup:
             return None
         _remember(_dedup, key, None)
+        created = now()   # under the lock, so `notifications` stays in `createdAt` order across threads
         n = {
             "notificationId": str(uuid.uuid4()), "sourceEventId": event.get("id"), "rule": rule.id,
             "type": rule.ntype, "topic": rule.topic,
