@@ -112,10 +112,15 @@ def _loop(stop: threading.Event) -> None:
             job = heapq.heappop(_jobs)
         if retry.attempt(job.run, job.label, job.attempt):
             continue
-        with _cond:
-            if not stop.is_set():
-                heapq.heappush(_jobs, _Job(time.monotonic() + retry.wait_before(job.attempt), next(_seq),
-                                           job.run, job.label, job.attempt + 1))
+        _schedule_retry(job, stop)
+
+
+def _schedule_retry(job: _Job, stop: threading.Event) -> None:
+    """Put `job` back for its next attempt after the wait of `retry`, unless the worker was stopped."""
+    with _cond:
+        if not stop.is_set():
+            heapq.heappush(_jobs, _Job(time.monotonic() + retry.wait_before(job.attempt), next(_seq),
+                                       job.run, job.label, job.attempt + 1))
 
 
 def _run_now(job: Callable[[], None], label: str) -> None:
