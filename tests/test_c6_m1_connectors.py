@@ -24,6 +24,8 @@
 #################################################################################
 """C6-M1 Connectors: acceptance cases of README 13 with the test data of README 14 / FRAMEWORK 7a,
 over HTTP with person and service tokens, plus the interface functions in-process."""
+import threading
+
 import pytest
 from conftest import BASE, bearer, person_token
 from fastapi import FastAPI
@@ -41,6 +43,9 @@ TU = "c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f"            # technical user of the h
 SUB = "d4e5f6a7-b8c9-4d0e-9f1a-2b3c4d5e6f70"           # subscription of a service of the provider (README 14)
 ENDPOINT = "https://edc.beispiel-maschinenbau.example/dsp"
 OTHER = "c0000002-0000-4000-8000-000000000002"
+PROCESS = "9f0e1d2c-3b4a-4c5d-8e6f-7a8b9c0d1e2f"
+RUN_1 = "1a2b3c4d-0000-4000-8000-000000000001"
+RUN_2 = "1a2b3c4d-0000-4000-8000-000000000002"
 BASE_PATH = "/api/c6-m1"
 
 
@@ -166,9 +171,9 @@ def test_7_delete_with_active_subscription_then_step_8_1(api):
     con = register_caas(api).json()["connectorId"]
     assert problem(api.delete(f"{BASE_PATH}/connectors/{con}", headers=h("pia")), 409, "subscription-active")
     interface.stub_subscriptions[SUB] = interface.stub_subscriptions[SUB] | {"status": "INACTIVE"}
-    step = {"processId": "p1", "stepRunId": "s1", "offerSubscriptionId": SUB}
+    step = {"processId": PROCESS, "stepRunId": RUN_1, "offerSubscriptionId": SUB}
     r = api.post(f"{BASE_PATH}/steps/deactivate-subscription-connectors", headers=svc("c12-m1"), json=step)
-    assert r.status_code == 200 and r.json() == {"stepRunId": "s1", "state": "DONE", "result": {"connectorIds": [con]}}
+    assert r.status_code == 200 and r.json() == {"stepRunId": RUN_1, "state": "DONE", "result": {"connectorIds": [con]}}
     assert published("ConnectorDeactivated") == [{"connectorId": con, "companyId": HOST}]
     assert api.delete(f"{BASE_PATH}/connectors/{con}", headers=h("pia")).status_code == 204
     assert interface.connectors[con]["status"] == "INACTIVE" and not published("ConnectorDeleted")
@@ -182,12 +187,12 @@ def test_7_delete_with_active_subscription_then_step_8_1(api):
 
 def test_8_unlink_technical_user_is_repeatable(api):
     con = register(api, technicalUserId=TU).json()["connectorId"]
-    step = {"processId": "p1", "stepRunId": "s1", "technicalUserId": TU}
+    step = {"processId": PROCESS, "stepRunId": RUN_1, "technicalUserId": TU}
     r = api.post(f"{BASE_PATH}/steps/unlink-technical-user", headers=svc("c12-m1"), json=step)
     assert r.json()["result"] == {"connectorIds": [con]} and r.json()["state"] == "DONE"
     assert interface.connectors[con]["technical_user_id"] is None and interface.connectors[con]["status"] == "ACTIVE"
-    again = api.post(f"{BASE_PATH}/steps/unlink-technical-user", headers=svc("c12-m1"), json=step | {"stepRunId": "s2"})
-    assert again.json() == {"stepRunId": "s2", "state": "DONE", "result": {"connectorIds": []}}
+    again = api.post(f"{BASE_PATH}/steps/unlink-technical-user", headers=svc("c12-m1"), json=step | {"stepRunId": RUN_2})
+    assert again.json() == {"stepRunId": RUN_2, "state": "DONE", "result": {"connectorIds": []}}
 
 
 def test_9_internal_query_for_c2_m3(api):
@@ -197,7 +202,7 @@ def test_9_internal_query_for_c2_m3(api):
         {"connectorId": con, "status": "ACTIVE"}]
     assert api.get(url, params={"technicalUserId": OTHER}, headers=svc("c2-m3")).json() == []
     assert api.get(url, params={"technicalUserId": TU}, headers=h("pia")).status_code == 403
-    interface.unlink_technical_user({"processId": "p", "stepRunId": "s", "technicalUserId": TU})
+    interface.unlink_technical_user({"processId": PROCESS, "stepRunId": RUN_1, "technicalUserId": TU})
     assert api.get(url, params={"technicalUserId": TU}, headers=svc("c2-m3")).json() == []
     assert problem(api.get(url, headers=svc("c2-m3")), 400, "validation")
 
@@ -217,10 +222,11 @@ def test_11_customer_account_of_the_subscription(api, monkeypatch):
     tu = c2_m3.create_for_subscription({"processId": "p", "stepRunId": "s", "offerSubscriptionId": SUB,
                                         "customerCompanyId": HOST, "providerCompanyId": PROVIDER,
                                         "name": "edc", "roles": []})["result"]["accounts"][0]["technicalUserId"]
-    r = register_caas(api, technicalUserId=tu)
-    assert r.status_code == 201, r.text
+    # company connector of the customer without offerSubscriptionId: C2-M3 says not usable (account still unlinked)
     assert problem(register(api, name="own", endpoint="https://own.example/dsp", technicalUserId=tu),
                    409, "technical-user-not-usable")
+    r = register_caas(api, technicalUserId=tu)
+    assert r.status_code == 201, r.text
     c2_m3.reset()
 
 
@@ -256,13 +262,137 @@ def test_permissions_and_company_scope(api):
     assert api.get(f"{BASE_PATH}/connectors").status_code == 401
     assert api.get(f"{BASE_PATH}/connectors", headers=h("hans")).status_code == 403    # no company, no role
     assert problem(api.post(f"{BASE_PATH}/steps/unlink-technical-user", headers=h("pia"),
-                            json={"processId": "p", "stepRunId": "s", "technicalUserId": TU}), 403, "forbidden")
+                            json={"processId": PROCESS, "stepRunId": RUN_1, "technicalUserId": TU}), 403, "forbidden")
 
 
 def test_steps_in_process_validate_and_repeat():
     interface.reset()
     with pytest.raises(problems.Problem) as e:
-        interface.deactivate_subscription_connectors({"processId": "p", "stepRunId": "s"})
+        interface.deactivate_subscription_connectors({"processId": PROCESS, "stepRunId": RUN_1})
     assert e.value.status == 400 and e.value.ext["retryable"] is False
-    first = interface.deactivate_subscription_connectors({"processId": "p", "stepRunId": "s", "offerSubscriptionId": SUB})
-    assert first == {"stepRunId": "s", "state": "DONE", "result": {"connectorIds": []}}
+    first = interface.deactivate_subscription_connectors({"processId": PROCESS, "stepRunId": RUN_1,
+                                                          "offerSubscriptionId": SUB})
+    assert first == {"stepRunId": RUN_1, "state": "DONE", "result": {"connectorIds": []}}
+
+
+@pytest.mark.parametrize("step,key", [("deactivate_subscription_connectors", "offerSubscriptionId"),
+                                      ("unlink_technical_user", "technicalUserId")])
+@pytest.mark.parametrize("missing", ["processId", "stepRunId", "key", "not-uuid"])
+def test_steps_require_uuid_identifiers_before_any_change(step, key, missing):
+    interface.reset()
+    interface.connectors["c"] = {"id": "c", "technical_user_id": TU, "offer_subscription_id": SUB, "status": "ACTIVE"}
+    body = {"processId": PROCESS, "stepRunId": RUN_1, key: SUB if key == "offerSubscriptionId" else TU}
+    if missing == "not-uuid":
+        body[key] = "abc"
+    else:
+        body.pop(key if missing == "key" else missing)
+    with pytest.raises(problems.Problem) as e:
+        getattr(interface, step)(body)
+    assert e.value.status == 400 and e.value.name == "validation" and e.value.ext["retryable"] is False
+    assert interface.connectors["c"]["technical_user_id"] == TU and interface.connectors["c"]["status"] == "ACTIVE"
+    interface.reset()
+
+
+def test_step_without_ids_over_http_is_400(api):
+    r = api.post(f"{BASE_PATH}/steps/unlink-technical-user", headers=svc("c12-m1"), json={"technicalUserId": TU})
+    assert problem(r, 400, "validation") and r.json()["retryable"] is False
+
+
+def test_8_1_clears_the_link_of_a_connector_deleted_while_pending(api):
+    interface.stub_subscriptions[SUB] = interface.stub_subscriptions[SUB] | {"status": "PENDING"}
+    con = register_caas(api, technicalUserId=TU).json()["connectorId"]
+    assert api.delete(f"{BASE_PATH}/connectors/{con}", headers=h("pia")).status_code == 204   # INACTIVE, link stays
+    assert interface.connectors[con]["technical_user_id"] == TU
+    step = {"processId": PROCESS, "stepRunId": RUN_1, "offerSubscriptionId": SUB}            # subscription declined
+    r = api.post(f"{BASE_PATH}/steps/deactivate-subscription-connectors", headers=svc("c12-m1"), json=step)
+    assert r.json()["result"] == {"connectorIds": [con]} and interface.connectors[con]["technical_user_id"] is None
+    assert len(published("ConnectorDeactivated")) == 1          # only the delete changed the status
+    again = api.post(f"{BASE_PATH}/steps/deactivate-subscription-connectors", headers=svc("c12-m1"),
+                     json=step | {"stepRunId": RUN_2})
+    assert again.json()["result"] == {"connectorIds": []} and len(published("ConnectorDeactivated")) == 1
+
+
+@pytest.mark.parametrize("endpoint", ["https://[", "https://edc.example]/dsp"])
+def test_malformed_endpoint_is_400_not_500(api, endpoint):
+    assert problem(register(api, endpoint=endpoint), 400, "validation")
+    con = register(api).json()["connectorId"]
+    assert problem(api.patch(f"{BASE_PATH}/connectors/{con}", headers=h("erika"), json={"endpoint": endpoint}),
+                   400, "validation")
+
+
+def _race(monkeypatch, calls: list) -> list[int]:
+    """Runs the calls at the same time; both pass the neighbour checks before either inserts."""
+    from modules.c6_m1 import service
+    barrier = threading.Barrier(len(calls))
+    real = service.company_status
+
+    def slow_company_status(company_id):
+        status = real(company_id)
+        barrier.wait(timeout=5)       # every request has passed its fail-fast checks
+        return status
+    monkeypatch.setattr(service, "company_status", slow_company_status)
+    results = [None] * len(calls)
+
+    def run(i):
+        results[i] = calls[i]()
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(len(calls))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return results
+
+
+def test_concurrent_registrations_same_name_and_endpoint(api, monkeypatch):
+    results = _race(monkeypatch, [lambda: register(api), lambda: register(api)])
+    assert sorted(r.status_code for r in results) == [201, 409]
+    assert any(problem(r, 409, "duplicate") for r in results)
+    assert len(interface.connectors) == 1 and len(published("ConnectorRegistered")) == 1
+
+
+def test_concurrent_registrations_same_technical_user(api, monkeypatch):
+    results = _race(monkeypatch, [lambda: register(api, name="a", technicalUserId=TU),
+                                  lambda: register(api, name="b", technicalUserId=TU)])
+    assert sorted(r.status_code for r in results) == [201, 409]
+    assert any(problem(r, 409, "technical-user-not-usable") for r in results)
+    assert len(interface.connectors) == 1
+
+
+def test_concurrent_registrations_same_subscription(api, monkeypatch):
+    results = _race(monkeypatch, [lambda: register_caas(api, name="a", endpoint="https://a.example/dsp"),
+                                  lambda: register_caas(api, name="b", endpoint="https://b.example/dsp")])
+    assert sorted(r.status_code for r in results) == [201, 409]
+    assert any(problem(r, 409, "subscription-linked") for r in results)
+    assert len(interface.connectors) == 1
+
+
+def test_concurrent_endpoint_change_and_registration(api, monkeypatch):
+    con = register(api, name="edc", endpoint="https://old.example/dsp").json()["connectorId"]
+    from modules.c6_m1 import service
+    barrier = threading.Barrier(2)
+    real = service.company_status
+
+    def slow(company_id):
+        status = real(company_id)
+        barrier.wait(timeout=5)
+        return status
+    monkeypatch.setattr(service, "company_status", slow)
+    out = {}
+
+    def reg():
+        out["reg"] = register(api, name="edc", endpoint="https://new.example/dsp")
+
+    def patch():
+        barrier.wait(timeout=5)       # the registration has passed its fail-fast checks
+        out["patch"] = api.patch(f"{BASE_PATH}/connectors/{con}", headers=h("erika"),
+                                 json={"endpoint": "https://new.example/dsp"})
+    threads = [threading.Thread(target=reg), threading.Thread(target=patch)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    # whichever runs first wins; the other sees it and answers 409 duplicate
+    assert sorted([out["reg"].status_code, out["patch"].status_code]) in ([200, 409], [201, 409])
+    assert problem(out["reg"] if out["reg"].status_code == 409 else out["patch"], 409, "duplicate")
+    live = [(c["name"], c["endpoint"]) for c in interface.connectors.values() if c["status"] == "ACTIVE"]
+    assert len(live) == len(set(live))
