@@ -119,7 +119,7 @@ def test_reset_drops_waiting_jobs(monkeypatch):
     worker.submit(lambda: (first_try.set(), job()), label="R16/e1")
     assert first_try.wait(5)
     worker.reset()   # the retry waits 10 minutes; reset drops it
-    assert not worker._jobs and len(calls) == 1
+    assert worker.pending() == 0 and len(calls) == 1
 
 
 def test_reset_leaves_sync_mode():
