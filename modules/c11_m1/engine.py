@@ -89,20 +89,24 @@ def _apply(rule: Rule, event: dict) -> None:
         if not sub:
             log.info("rule %s: no applicant known for event %s", rule.id, event["id"])
             return
-        store.add_notification(event, rule, receiver_sub=sub, done=_created_done(rule, event))
+        _store(rule, event, receiver_sub=sub)
     elif rule.recipients.startswith("staff:"):
-        store.add_notification(event, rule, receiver_permission=rule.recipients.removeprefix("staff:"),
-                               done=_created_done(rule, event))
+        _store(rule, event, receiver_permission=rule.recipients.removeprefix("staff:"))
     else:
         worker.submit(lambda: _deliver(rule, event), label=f"{rule.id}/{event['id']}")
 
 
 def _deliver(rule: Rule, event: dict) -> None:
     """Worker job: one personal notification per person; repeatable, since `add_notification` dedups."""
-    subs = recipients.resolve(rule.recipients, event.get("data") or {})
-    done = _created_done(rule, event)   # computed at delivery: a closer may have come during a retry
-    for sub in dict.fromkeys(subs):
-        store.add_notification(event, rule, receiver_sub=sub, done=done)
+    for sub in dict.fromkeys(recipients.resolve(rule.recipients, event.get("data") or {})):
+        _store(rule, event, receiver_sub=sub)
+
+
+def _store(rule: Rule, event: dict, **receiver: str) -> None:
+    """Decide `done` and store under one lock; `closing.handle` holds the same lock, so a closer
+    is either remembered before or closes the task after (README 6.2). Recipients are resolved outside."""
+    with store.LOCK:
+        store.add_notification(event, rule, done=_created_done(rule, event), **receiver)
 
 
 def _created_done(rule: Rule, event: dict) -> bool | None:
