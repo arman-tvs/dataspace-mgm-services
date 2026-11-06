@@ -110,9 +110,8 @@ def _loop(stop: threading.Event) -> None:
             if stop.is_set():
                 return
             job = heapq.heappop(_jobs)
-        if retry.attempt(job.run, job.label, job.attempt):
-            continue
-        _schedule_retry(job, stop)
+        if retry.needs_another(job.run, job.label, job.attempt):
+            _schedule_retry(job, stop)
 
 
 def _schedule_retry(job: _Job, stop: threading.Event) -> None:
