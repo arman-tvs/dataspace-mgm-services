@@ -63,8 +63,3 @@ def needs_another(job: Callable[[], None], label: str, number: int) -> bool:
     except Exception:   # a broken job must not stop the worker thread; logged with its traceback
         log.exception("job %s failed", label)
     return False
-
-
-def attempt(job: Callable[[], None], label: str, number: int) -> bool:
-    """Run attempt `number` of `job`; `True` when the job is finished. Being replaced by `needs_another`."""
-    return not needs_another(job, label, number)
