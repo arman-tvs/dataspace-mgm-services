@@ -155,6 +155,14 @@ def test_not_found_or_missing_field_is_nobody(fake):
     assert len(f.calls) == 1
 
 
+@pytest.mark.parametrize("value", [{"id": COMPANY}, [COMPANY], 42, ""])
+def test_a_company_field_that_is_not_an_id_is_nobody(fake, value):
+    f = fake({})
+    assert recipients.resolve("it_or_company_admin:companyId", {"companyId": value}) == []
+    assert recipients.resolve("app_customers:appId", {"appId": value}) == []
+    assert f.calls == []
+
+
 def test_unreachable_neighbour_raises_unavailable(fake):
     fake({("c2-m2", "list_company_user_refs"): Problem("c11-m1", 502, "upstream-error", retryable=True)})
     with pytest.raises(store.Unavailable):

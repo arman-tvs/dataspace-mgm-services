@@ -75,23 +75,27 @@ def _now() -> dt.datetime:
     return dt.datetime.now(dt.UTC)
 
 
-def _parse(time: str | None) -> dt.datetime:
+def _parse(time: object) -> dt.datetime:
     """CloudEvents `time` (RFC 3339) as an aware datetime; missing or invalid counts as now."""
-    if time:
+    if isinstance(time, str) and time:
         try:
             parsed = dt.datetime.fromisoformat(time)
         except ValueError:
             log.warning("event time is not RFC 3339, counted as now")
         else:
             return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.UTC)
+    elif time is not None:
+        log.warning("event time is not a string, counted as now")
     return _now()
 
 
 def _key(rule_id: str, fields: tuple[str, ...], data: dict) -> Key | None:
-    """The object of `data` for these closer fields; None if a field is missing."""
-    if any(data.get(f) is None for f in fields):
+    """The object of `data` for these closer fields; None if a field is missing or not an ID string
+    (FRAMEWORK 4.1), so a malformed event closes nothing instead of failing the whole event."""
+    values = tuple(data.get(f) for f in fields)
+    if not all(isinstance(v, str) and v for v in values):
         return None
-    return rule_id, fields, tuple(data[f] for f in fields)
+    return rule_id, fields, values
 
 
 def handle(event: dict) -> None:

@@ -186,6 +186,21 @@ def test_event_without_time_counts_as_now():
     assert not closing.closed_before(r2, {"applicationId": APPLICATION}, "2999-01-01T00:00:00Z")
 
 
+@pytest.mark.parametrize("time, process", [(T1, {"not": "an id"}), (T1, ["x"]), (T1, ""), (12345, PROCESS)])
+def test_malformed_closer_does_not_lose_the_event(time, process):
+    """A closer with a non-string ID or `time` closes nothing, and the rest of the event is still handled."""
+    c11.on_event(step_failed(T0))
+    closer = ev("c12-m1", "ProcessEnded", T1, processId=process)
+    closer["time"] = time
+    c11.on_event(closer)
+    assert of_type("PROCESS_STEP_FAILED")[0]["done"] is (process == PROCESS)
+
+
+def test_malformed_task_event_still_creates_its_task():
+    c11.on_event(ev("c12-m1", "ProcessStepFailed", T0, processId=["x"], stepKey="s"))
+    assert of_type("PROCESS_STEP_FAILED")[0]["done"] is False
+
+
 def test_reset_forgets_remembered_closers():
     c11.on_event(approved(T1))
     c11.reset()

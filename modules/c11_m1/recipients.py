@@ -107,10 +107,12 @@ def _company_admins(company_ids: Iterable[str | None]) -> list[str]:
 
 
 def _value(data: dict, field: str) -> str | None:
+    """The ID in `data[field]`; None (nobody) if it is missing or not a string (FRAMEWORK 4.1)."""
     value = data.get(field)
-    if value is None:
-        log.info("recipients: field %s missing in the event", field)
-    return value
+    if isinstance(value, str) and value:
+        return value
+    log.info("recipients: field %s missing or not an ID in the event", field)
+    return None
 
 
 def _query(target: str, function: str, **params) -> list | dict | None:
