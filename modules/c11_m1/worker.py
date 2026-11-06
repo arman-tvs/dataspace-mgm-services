@@ -125,5 +125,5 @@ def _schedule_retry(job: _Job, stop: threading.Event) -> None:
 def _run_now(job: Callable[[], None], label: str) -> None:
     """Sync mode: all attempts at once in the calling thread."""
     attempt = 1
-    while not retry.attempt(job, label, attempt):
+    while retry.needs_another(job, label, attempt):
         attempt += 1
