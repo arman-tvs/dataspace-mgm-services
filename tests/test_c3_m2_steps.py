@@ -339,8 +339,9 @@ def test_stub_file_entries_must_be_company_objects(tmp_path, monkeypatch):
     bad.write_text(json.dumps(CSP_STUB + ["not a company"]))
     monkeypatch.setenv("CSP_STUB_FILE", str(bad))
     interface.reset()
-    with pytest.raises(ValueError, match="CSP_STUB_FILE"):
-        interface.find_companies(ebwoid=OTHER_EBWOID)
+    p = problem(interface.find_companies, ebwoid=OTHER_EBWOID)
+    assert (p.status, p.name, p.ext["retryable"]) == (502, "upstream-error", True)
+    assert "CSP_STUB_FILE" in (p.detail or "")
 
 
 def test_find_companies_rejects_a_malformed_csp_answer(monkeypatch):
@@ -477,3 +478,99 @@ def test_csp_answers_map_to_the_errors_of_readme_12(monkeypatch, csp_status, nam
     assert (p.status, p.name, p.ext["retryable"]) == (502, name, retryable)
     row = store.registrations.get(COMPANY)
     assert (row.status if row else None) == row_status
+
+
+# ---------------------------------------------------------------- team review (2026-11-06)
+@pytest.mark.parametrize("content", ["{not json", "[1, 2]", '{"companies": "nope"}'])
+def test_broken_stub_file_is_502_upstream_error_with_an_audit_entry(tmp_path, monkeypatch, content):
+    """OPEN-QUESTIONS 11: a configuration fault of the CSP connection, like an unusable signing key."""
+    bad = tmp_path / "bad-stub.json"
+    bad.write_text(content)
+    monkeypatch.setenv("CSP_STUB_FILE", str(bad))
+    interface.reset()
+    p = problem(interface.register_company, maschinenbau())
+    assert (p.status, p.name, p.ext["retryable"]) == (502, "upstream-error", True)
+    entries = [(a.operation, a.http_status, a.error_type) for a in store.audit]
+    assert entries == [("register-company", None, "stub-file")]
+    assert COMPANY not in store.registrations
+    # once the file is fixed, the retry of C12 succeeds
+    bad.write_text(json.dumps(CSP_STUB))
+    assert interface.register_company(maschinenbau())["result"] == {"bpn": MASCHINENBAU_BPN}
+
+
+def test_deregister_connector_with_another_company_is_409():
+    """README 8.6 and OPEN-QUESTIONS 17: companyId must be the connector's host company."""
+    register()
+    interface.register_company(step(companyId=LOGISTIK, legalName="Beispiel Logistik GmbH", country="DE",
+                                    identifiers=[{"type": "COMMERCIAL_REG_NUMBER", "value": "HRB 200002"}]))
+    interface.register_connector(step(connectorId=CONNECTOR, endpointUrl=ENDPOINT))
+    p = problem(interface.deregister_connector, step(companyId=LOGISTIK, connectorId=CONNECTOR))
+    assert (p.status, p.name, p.ext["retryable"]) == (409, "invalid-state", False)
+    assert store.connectors[CONNECTOR].status == "REGISTERED"
+    assert csp_calls("deregister-connector") == 0 and published("ConnectorDeregisteredAtCsp") == []
+
+
+@pytest.mark.parametrize("step_name", ["register_company", "transfer_company"])
+def test_pending_without_an_operation_id_calls_the_csp_again(step_name):
+    """OPEN-QUESTIONS 19: RUNNING only with a running operation (README 6.4)."""
+    if step_name == "transfer_company":
+        move_away(register())
+    row = store.registration_row(COMPANY)
+    row.status, row.pending_operation_id = "PENDING", None
+    s = maschinenbau() if step_name == "register_company" else step(bpn=MASCHINENBAU_BPN, ebwoid=EBWOID)
+    r = getattr(interface, step_name)(s)
+    assert r["state"] == "DONE" and r["result"] == {"bpn": MASCHINENBAU_BPN}
+    assert csp_calls(step_name.replace("_", "-")) == 1
+    assert interface.get_csp_registration(companyId=COMPANY)["status"] == "REGISTERED"
+
+
+def run_twice_at_once(monkeypatch, fn, *inputs):
+    """Calls fn with each input in its own thread; the CSP call takes 50 ms, so both calls are past
+    their "is this new?" check before either stores its change."""
+    import threading
+    import time
+    from modules.c3_m2 import csp_client
+    original = csp_client.call
+
+    def slow_call(*a, **k):
+        time.sleep(0.05)
+        return original(*a, **k)
+    monkeypatch.setattr(csp_client, "call", slow_call)
+    errors_seen: list[BaseException] = []
+
+    def run(i):
+        try:
+            fn(i)
+        except BaseException as e:  # noqa: BLE001 - reported below
+            errors_seen.append(e)
+    threads = [threading.Thread(target=run, args=(i,)) for i in inputs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+    assert errors_seen == []
+
+
+def test_concurrent_register_did_publishes_once(monkeypatch):
+    """store.lock: two concurrent calls of the same step change the row once and publish once (FRAMEWORK 4.4)."""
+    bpn = register()
+    did = f"did:web:wallet.example.org:{bpn}"
+    run_twice_at_once(monkeypatch, lambda i: interface.register_did(step(did=did)), 1, 2)
+    assert published("CompanyDidRegistered") == [{"companyId": COMPANY, "bpn": bpn, "did": did}]
+
+
+def test_concurrent_register_connector_publishes_once(monkeypatch):
+    register()
+    def enter_connector(i: int) -> None:
+        interface.register_connector(step(connectorId=CONNECTOR, endpointUrl=ENDPOINT))
+    run_twice_at_once(monkeypatch, enter_connector, 1, 2)
+    assert len(published("ConnectorRegisteredAtCsp")) == 1
+    assert store.connectors[CONNECTOR].status == "REGISTERED"
+
+
+def test_audit_list_is_capped(monkeypatch):
+    """README 5: the in-memory audit keeps the newest AUDIT_MAX entries."""
+    monkeypatch.setattr(store, "AUDIT_MAX", 3)
+    for i in range(5):
+        store.record_audit(f"op-{i}", None, None, 200)
+    assert [a.operation for a in store.audit] == ["op-2", "op-3", "op-4"]

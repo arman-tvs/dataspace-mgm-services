@@ -300,3 +300,15 @@ def test_unusable_signing_key_is_502_upstream_error(api, shared_csp, tmp_path, m
     assert r.status_code == 502
     assert r.json()["type"] == "urn:c3-m2:problem:upstream-error" and r.json()["retryable"] is True
     assert "half-key" not in r.text
+
+
+
+# ---------------------------------------------------------------- team review (2026-11-06)
+def test_broken_stub_file_is_502_not_500_over_http(api, tmp_path, monkeypatch):
+    (tmp_path / "bad-stub.json").write_text("{not json")
+    monkeypatch.setenv("CSP_STUB_FILE", str(tmp_path / "bad-stub.json"))
+    interface.reset()
+    r = api.post("/api/c3-m2/steps/register-company", json=maschinenbau(), headers=service("svc-c12-m1"))
+    assert r.status_code == 502
+    assert r.json()["type"] == "urn:c3-m2:problem:upstream-error" and r.json()["retryable"] is True
+    assert str(tmp_path) not in r.text
