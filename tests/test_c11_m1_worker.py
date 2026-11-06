@@ -112,12 +112,20 @@ def test_background_thread_retries_until_success():
     assert len(calls) == 3 and set(calls) == {"c11-m1-worker"}
 
 
-def test_reset_drops_waiting_jobs_and_sync_mode(monkeypatch):
+def test_reset_drops_waiting_jobs(monkeypatch):
     monkeypatch.setattr(retry, "FIRST_WAIT", 600.0)
     job, calls = flaky(5)
     first_try = threading.Event()
     worker.submit(lambda: (first_try.set(), job()), label="R16/e1")
     assert first_try.wait(5)
-    worker.set_sync(True)
     worker.reset()   # the retry waits 10 minutes; reset drops it
-    assert not worker._jobs and not worker._sync and len(calls) == 1
+    assert not worker._jobs and len(calls) == 1
+
+
+def test_reset_leaves_sync_mode():
+    worker.set_sync(True)
+    worker.reset()
+    done = threading.Event()
+    job, calls = flaky(0, done)
+    worker.submit(job, label="R16/e1")
+    assert done.wait(5) and calls == ["c11-m1-worker"]   # the background thread, not the caller
