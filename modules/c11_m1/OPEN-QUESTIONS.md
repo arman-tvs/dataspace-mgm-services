@@ -45,3 +45,4 @@ the reading this implementation uses. A spec change goes to the spec repository,
 | 12 | Filter `done` | README 7.1 ("tasks only") | With `done` set, the list contains tasks only; information notifications are left out. |
 | 13 | `createdSince` without a time zone | README 7.1, FRAMEWORK 4.1 | Counts as UTC. |
 | 14 | Names of the neighbour addresses | README 4, FRAMEWORK 4.7 | README 4 names `APP_ACCESS_URL` (C2-M2) and `SUBSCRIPTION_URL` (C10-M1). The scaffold has one notation for every module, read by `portal_common.neighbours`: `<MODULE>_URL` (`C2_M2_URL`, `C10_M1_URL`), then `MODULE_URLS`, then `MODULE_URLS_DEFAULT` (`docs/developers/hackathon-scaffold.md`). C11-M1 follows the scaffold. |
+| 15 | `done_at` of a task | README 5, 6.2 | A task closed by its closing event gets that event's `time`. A task created as done, because its closing event arrived first, gets the time it was stored. |

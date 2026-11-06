@@ -26,8 +26,9 @@
 """C11-M1 Notifications: the module contract of the scaffold (`router`, `reset`, `on_event`).
 
 The work happens in the other files of the folder: `rules` (R1 to R17), `engine` (one event in),
-`closing` (tasks done), `recipients` (who gets a personal notification), `worker` (retries),
-`store` (the inbox) and `api` (README 7).
+`closing` (tasks done), `recipients` (who gets a personal notification), `worker` and `retry`
+(background delivery and its retries), `store` (the data), `inbox`, `listing` and `marks` (what a
+person sees, the list query, read and hidden state) and `api` (README 7).
 """
 from __future__ import annotations
 
