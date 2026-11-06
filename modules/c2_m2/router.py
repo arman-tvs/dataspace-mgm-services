@@ -20,61 +20,28 @@
 #  that the code is correct.
 #
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
-#  Assisted-By: Claude Code (claude-opus-5-5)
+#  Assisted-By: GitHub Copilot
 #################################################################################
-"""Stand-in of C2-M2 Users and App Access: `assign-company-admin` (binds the applicant in the test
-IAM), client template and instance clients of apps, and the queries on instance clients.
-Writes to the in-memory test IAM through its Python API (the Keycloak Admin API is not simulated).
-"""
-from __future__ import annotations
+"""Scaffold entry point of C2-M2: `router`, `reset()` and `on_startup()` (AGENTS.md, module folder).
+The endpoints are defined in c2_m2_rs_api and implemented in c2_m2_rs_service/producer/impl."""
+import logging
 
-from fastapi import Body
+from . import interface, module
+from .c2_m2_impl.config import Config
+from .c2_m2_rs_service.routers import private_router, public_router, router
 
-from portal_common import standin
+__all__ = ["on_startup", "private_router", "public_router", "reset", "router"]
 
-from . import interface
-from .interface import MODULE
-
-STANDIN = True
-router = standin.router(MODULE)
+log = logging.getLogger(__name__)
 
 
 def reset() -> None:
     interface.reset()
 
 
-
-@router.post("/steps/assign-company-admin")
-def assign_company_admin(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/assign-company-admin")):
-    return interface.assign_company_admin(body)
-
-
-@router.post("/steps/create-client-template")
-def create_client_template(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/create-client-template")):
-    return interface.create_client_template(body)
-
-
-@router.post("/steps/create-instance-client")
-def create_instance_client(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/create-instance-client")):
-    return interface.create_instance_client(body)
-
-
-@router.post("/steps/enable-instance-client")
-def enable_instance_client(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/enable-instance-client")):
-    return interface.enable_instance_client(body)
-
-
-@router.post("/steps/disable-instance-client")
-def disable_instance_client(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/disable-instance-client")):
-    return interface.disable_instance_client(body)
-
-
-@router.get("/internal/app-instance-clients")
-def list_instance_clients(_: dict = standin.perm(MODULE, "GET", "/internal/app-instance-clients"),
-                          appId: str | None = None, offerSubscriptionId: str | None = None):
-    return interface.list_app_instance_clients(appId=appId, offerSubscriptionId=offerSubscriptionId)
-
-
-@router.get("/internal/app-instance-clients/{id}")
-def get_instance_client(id: str, _: dict = standin.perm(MODULE, "GET", "/internal/app-instance-clients/{id}")):
-    return interface.get_app_instance_client(id=id)
+def on_startup() -> None:
+    # Without a database the installation still starts; calls of C2-M2 fail until DATABASE_URL is set.
+    if not Config().from_properties("database.url"):
+        log.warning("C2-M2 has no database (DATABASE_URL, README 4): bootstrap and invitation cleanup skipped")
+        return
+    module.current().on_startup()

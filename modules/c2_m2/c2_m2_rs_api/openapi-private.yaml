@@ -1,0 +1,1486 @@
+#################################################################################
+#  Copyright (c) 2026 Contributors to the Eclipse Foundation
+#
+#  See the NOTICE file(s) distributed with this work for additional
+#  information regarding copyright ownership.
+#
+#  This program and the accompanying materials are made available under the
+#  terms of the Apache License, Version 2.0 which is available at
+#  https://www.apache.org/licenses/LICENSE-2.0.
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#  License for the specific language governing permissions and limitations
+#  under the License.
+#
+#  AI Disclosure: This file was entirely AI-generated.
+#  The AI-generated portions are made available under CC0-1.0 and not subject
+#  to the project's license. The human contributor has reviewed and verified
+#  that the code is correct.
+#
+#  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
+#  Assisted-By: GitHub Copilot
+#################################################################################
+openapi: 3.1.0
+info:
+  title: C2-M2 Users and App Access - Private API
+  version: 0.2.0
+  description: Private API for module queries and Process Orchestration steps. HTTP
+    calls require query_c2_m2 or execute_steps_c2_m2. In-process calls use modules.c2_m2.interface
+    without a token. Event schemas describe the private CloudEvents contract.
+servers:
+- url: /api/c2-m2
+security:
+- portalIam: []
+tags:
+- name: Queries
+  description: For other modules
+- name: Steps
+  description: For Process Orchestration
+paths:
+  /internal/app-roles:
+    get:
+      tags:
+      - Queries
+      operationId: listAppRoles
+      summary: App roles of one or more apps, from their templates
+      description: README 9.1. The order of the apps follows the request.
+      x-permission: query_c2_m2
+      x-permission-scope: osp
+      parameters:
+      - name: appId
+        in: query
+        required: true
+        description: May be given 1 to QUERY_MAX_APPS (default 50) times.
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+        style: form
+        explode: true
+      - $ref: '#/components/parameters/Lang'
+      responses:
+        '200':
+          description: Roles per app
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AppRoles'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /internal/app-instance-clients:
+    get:
+      tags:
+      - Queries
+      operationId: listAppInstanceClients
+      summary: Instance clients by app, subscription or customer
+      description: 'README 9.2. At least one of appId and offerSubscriptionId is required.
+
+        Without the filter status: PENDING and ACTIVE. Reads only the module''s
+
+        own table.
+
+        '
+      x-permission: query_c2_m2
+      x-permission-scope: osp
+      parameters:
+      - name: appId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: offerSubscriptionId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: customerCompanyId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: instanceKind
+        in: query
+        schema:
+          $ref: '#/components/schemas/InstanceKind'
+      - name: status
+        in: query
+        description: May be given several times.
+        schema:
+          type: array
+          items:
+            $ref: '#/components/schemas/InstanceClientStatus'
+        style: form
+        explode: true
+      responses:
+        '200':
+          description: Matching instance clients, sorted by createdAt
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AppInstanceClient'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+  /internal/app-instance-clients/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      tags:
+      - Queries
+      operationId: getAppInstanceClient
+      summary: One instance client
+      description: README 9.3.
+      x-permission: query_c2_m2
+      x-permission-scope: osp
+      responses:
+        '200':
+          description: The instance client
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppInstanceClient'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /internal/company-users:
+    get:
+      tags:
+      - Queries
+      operationId: listCompanyUserRefs
+      summary: People of a company, optionally with a portal role
+      description: 'README 9.4. E.g. for notifications. Without the filter status:
+        ACTIVE.
+
+        Without names.
+
+        '
+      x-permission: query_c2_m2
+      x-permission-scope: osp
+      parameters:
+      - name: companyId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: portalRole
+        in: query
+        description: A company portal role, e.g. `Company Admin`.
+        schema:
+          $ref: '#/components/schemas/PortalRoleName'
+      - name: status
+        in: query
+        description: May be given several times.
+        schema:
+          type: array
+          items:
+            $ref: '#/components/schemas/BindingStatus'
+        style: form
+        explode: true
+      responses:
+        '200':
+          description: Matching people
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompanyUserRef'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /steps/create-client-template:
+    post:
+      tags:
+      - Steps
+      operationId: stepCreateClientTemplate
+      summary: 'Step: create the client template of an approved app'
+      description: 'README 8.1. Preconditions: none in the module. Repeatable; the
+        template
+
+        is found again by the app ID.
+
+        '
+      x-permission: execute_steps_c2_m2
+      x-permission-scope: osp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepCreateClientTemplate'
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepResultTemplate'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /steps/create-instance-client:
+    post:
+      tags:
+      - Steps
+      operationId: stepCreateInstanceClient
+      summary: 'Step: create an instance client from the template, disabled'
+      description: 'README 8.2. Precondition: template of the app created. SINGLE
+        for a
+
+        single-instance app (at the approval), SUBSCRIPTION for a subscription
+
+        to a multi-instance app. Repeatable; the row is found again by
+
+        offerSubscriptionId or, for SINGLE, by appId.
+
+        '
+      x-permission: execute_steps_c2_m2
+      x-permission-scope: osp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepCreateInstanceClient'
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepResultInstanceClient'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /steps/enable-instance-client:
+    post:
+      tags:
+      - Steps
+      operationId: stepEnableInstanceClient
+      summary: 'Step: enable an instance client'
+      description: 'README 8.3. Precondition: instance client created, status PENDING
+        or
+
+        ACTIVE. PENDING becomes ACTIVE; ACTIVE stays; DISABLED gives 409.
+
+        '
+      x-permission: execute_steps_c2_m2
+      x-permission-scope: osp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepInstanceClientRef'
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepResultInstanceClient'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /steps/disable-instance-client:
+    post:
+      tags:
+      - Steps
+      operationId: stepDisableInstanceClient
+      summary: 'Step: disable an instance client'
+      description: 'README 8.4. Precondition: row of the instance client exists. PENDING
+        or
+
+        ACTIVE becomes DISABLED (final); DISABLED stays.
+
+        '
+      x-permission: execute_steps_c2_m2
+      x-permission-scope: osp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepInstanceClientRef'
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepResultInstanceClient'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /steps/update-instance-url:
+    post:
+      tags:
+      - Steps
+      operationId: stepUpdateInstanceUrl
+      summary: 'Step: change the URL of an instance'
+      description: 'README 8.5. Precondition: instance client created, not DISABLED.
+        Sets
+
+        baseUrl and the redirect URI of the client.
+
+        '
+      x-permission: execute_steps_c2_m2
+      x-permission-scope: osp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepUpdateInstanceUrl'
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepResultInstanceClient'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /steps/add-app-roles:
+    post:
+      tags:
+      - Steps
+      operationId: stepAddAppRoles
+      summary: 'Step: add app roles to the template and to all instance clients'
+      description: 'README 8.6. Precondition: template of the app created. Existing
+        roles
+
+        are skipped and keep their descriptions.
+
+        '
+      x-permission: execute_steps_c2_m2
+      x-permission-scope: osp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepAddAppRoles'
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepResultAddAppRoles'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /steps/update-role-descriptions:
+    post:
+      tags:
+      - Steps
+      operationId: stepUpdateRoleDescriptions
+      summary: 'Step: replace the descriptions of app roles'
+      description: 'README 8.7. Precondition: template created, every named role exists.
+
+        Per role the complete new list of descriptions; on the template and on
+
+        all instance clients. An unknown role gives 404, and then nothing is
+
+        changed.
+
+        '
+      x-permission: execute_steps_c2_m2
+      x-permission-scope: osp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepUpdateRoleDescriptions'
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepResultUpdateRoleDescriptions'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /steps/assign-company-admin:
+    post:
+      tags:
+      - Steps
+      operationId: stepAssignCompanyAdmin
+      summary: 'Step: bind the account of the applicant and make it Company Admin'
+      description: 'README 8.8. Preconditions: application approved, BPN assigned,
+        account
+
+        of the applicant in the Portal IAM. Repeatable by companyId and
+
+        applicantSub. An account that is bound to another company gives 409
+
+        user-already-bound (retryable false).
+
+        '
+      x-permission: execute_steps_c2_m2
+      x-permission-scope: osp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepAssignCompanyAdmin'
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepResultAssignCompanyAdmin'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /steps/disable-company-users:
+    post:
+      tags:
+      - Steps
+      operationId: stepDisableCompanyUsers
+      summary: 'Step: remove company and roles from the accounts of a deactivated
+        company'
+      description: 'README 8.9. Precondition: company deactivated (CompanyDeactivated).
+
+        Accounts stay enabled but lose the company, the company portal roles and
+
+        the app roles (saved in suspended_roles); sessions ended; open
+
+        invitations revoked. Not for the OSP company. Repeatable; the event
+
+        CompanyUsersDisabled exactly once.
+
+        '
+      x-permission: execute_steps_c2_m2
+      x-permission-scope: osp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepCompanyRef'
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepResultCompanyUsers'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+  /steps/enable-company-users:
+    post:
+      tags:
+      - Steps
+      operationId: stepEnableCompanyUsers
+      summary: 'Step: give company and roles back to the accounts of a reactivated
+        company'
+      description: 'README 8.10. Precondition: company reactivated (CompanyReactivated).
+
+        Accounts with binding DISABLED get the company and the saved roles back.
+
+        Repeatable; the event CompanyUsersEnabled exactly once.
+
+        '
+      x-permission: execute_steps_c2_m2
+      x-permission-scope: osp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepCompanyRef'
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepResultCompanyUsers'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Lang:
+      name: lang
+      in: query
+      description: Language of `description`; otherwise English, otherwise the first
+        one.
+      schema:
+        type: string
+        pattern: ^[a-z]{2}$
+        default: en
+        examples:
+        - de
+        - en
+  schemas:
+    InstanceKind:
+      type: string
+      description: SINGLE = the one instance of a single-instance app; SUBSCRIPTION
+        = the instance of a subscription to a multi-instance app.
+      enum:
+      - SINGLE
+      - SUBSCRIPTION
+    InstanceClientStatus:
+      type: string
+      description: PENDING = created, client disabled; ACTIVE = client enabled; DISABLED
+        = client disabled, final.
+      enum:
+      - PENDING
+      - ACTIVE
+      - DISABLED
+    BindingStatus:
+      type: string
+      description: 'ACTIVE = bound; DISABLED = company deactivated, account without
+        company
+
+        and roles (saved); REMOVED = binding removed, final for this row.
+
+        '
+      enum:
+      - ACTIVE
+      - DISABLED
+      - REMOVED
+    JoinedVia:
+      type: string
+      description: ONBOARDING = step assign-company-admin; INVITATION = invitation
+        accepted.
+      enum:
+      - ONBOARDING
+      - INVITATION
+    RemovalReason:
+      type: string
+      description: 'REMOVED_BY_COMPANY = removed by the Company Admin; REMOVED_BY_OSP
+        = removed
+
+        by the OSP staff; ACCOUNT_DELETED = account missing in the Portal IAM.
+
+        '
+      enum:
+      - REMOVED_BY_COMPANY
+      - REMOVED_BY_OSP
+      - ACCOUNT_DELETED
+    InstanceUrl:
+      type: string
+      format: uri
+      maxLength: 255
+      pattern: ^https?://[^#]+$
+      description: Absolute http or https URL without '#'.
+      examples:
+      - https://demo-app.example.org
+    RoleName:
+      type: string
+      minLength: 1
+      maxLength: 255
+      description: Name of an app role.
+      examples:
+      - Viewer
+    PortalRoleName:
+      type: string
+      minLength: 1
+      maxLength: 255
+      description: 'Name of a portal role on the client portal-core. In the company
+        from
+
+        COMPANY_PORTAL_ROLES, for the staff from STAFF_PORTAL_ROLES.
+
+        '
+      examples:
+      - Company Admin
+      - IT Admin
+      - Member
+      - OSP Reviewer
+      - OSP Admin
+    BpnL:
+      type: string
+      pattern: ^BPNL[0-9A-Z]{12}$
+      examples:
+      - BPNLIUK2REMLK3F4
+    RoleDescription:
+      type: object
+      required:
+      - lang
+      - text
+      properties:
+        lang:
+          type: string
+          pattern: ^[a-z]{2}$
+          description: Language from the configuration LANGUAGES, e.g. de or en.
+        text:
+          type: string
+          minLength: 1
+          maxLength: 255
+    RoleInput:
+      type: object
+      required:
+      - name
+      - descriptions
+      properties:
+        name:
+          $ref: '#/components/schemas/RoleName'
+        descriptions:
+          type: array
+          minItems: 1
+          description: At most one per language.
+          items:
+            $ref: '#/components/schemas/RoleDescription'
+    AppRole:
+      type: object
+      required:
+      - name
+      - descriptions
+      properties:
+        name:
+          $ref: '#/components/schemas/RoleName'
+        description:
+          type:
+          - string
+          - 'null'
+          description: In the requested language, otherwise English, otherwise the
+            first one.
+        descriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleDescription'
+    AppRoles:
+      type: object
+      required:
+      - appId
+      - templateExists
+      - roles
+      properties:
+        appId:
+          type: string
+          format: uuid
+        templateExists:
+          type: boolean
+        roles:
+          type: array
+          description: Sorted by name. Empty if templateExists is false.
+          items:
+            $ref: '#/components/schemas/AppRole'
+    AppInstanceClient:
+      type: object
+      required:
+      - id
+      - appId
+      - instanceKind
+      - iamClientId
+      - instanceUrl
+      - status
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        appId:
+          type: string
+          format: uuid
+        instanceKind:
+          $ref: '#/components/schemas/InstanceKind'
+        offerSubscriptionId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        customerCompanyId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        iamClientId:
+          type: string
+          description: Client ID in the Portal IAM, e.g. app123.
+        instanceUrl:
+          $ref: '#/components/schemas/InstanceUrl'
+        status:
+          $ref: '#/components/schemas/InstanceClientStatus'
+        createdAt:
+          type: string
+          format: date-time
+        changedAt:
+          type: string
+          format: date-time
+    CompanyUserRef:
+      type: object
+      required:
+      - userId
+      - status
+      description: Without names.
+      properties:
+        userId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/BindingStatus'
+    StepRequest:
+      type: object
+      required:
+      - processId
+      - stepRunId
+      properties:
+        processId:
+          type: string
+          format: uuid
+          description: Flow in Process Orchestration; only for the audit log.
+        stepRunId:
+          type: string
+          format: uuid
+          description: This run of the step; only for the audit log.
+    StepCreateClientTemplate:
+      allOf:
+      - $ref: '#/components/schemas/StepRequest'
+      - type: object
+        required:
+        - appId
+        - providerCompanyId
+        - appName
+        - roles
+        properties:
+          appId:
+            type: string
+            format: uuid
+          providerCompanyId:
+            type: string
+            format: uuid
+          appName:
+            type: string
+            minLength: 1
+            maxLength: 255
+          roles:
+            type: array
+            minItems: 1
+            description: App roles from the approved draft; names unique.
+            items:
+              $ref: '#/components/schemas/RoleInput'
+    StepCreateInstanceClient:
+      allOf:
+      - $ref: '#/components/schemas/StepRequest'
+      - type: object
+        required:
+        - appId
+        - instanceKind
+        - instanceUrl
+        properties:
+          appId:
+            type: string
+            format: uuid
+          instanceKind:
+            $ref: '#/components/schemas/InstanceKind'
+          instanceUrl:
+            $ref: '#/components/schemas/InstanceUrl'
+          offerSubscriptionId:
+            type: string
+            format: uuid
+            description: Required for SUBSCRIPTION, not allowed for SINGLE.
+          customerCompanyId:
+            type: string
+            format: uuid
+            description: Required for SUBSCRIPTION, not allowed for SINGLE.
+    StepInstanceClientRef:
+      allOf:
+      - $ref: '#/components/schemas/StepRequest'
+      - type: object
+        required:
+        - appInstanceClientId
+        properties:
+          appInstanceClientId:
+            type: string
+            format: uuid
+    StepUpdateInstanceUrl:
+      allOf:
+      - $ref: '#/components/schemas/StepInstanceClientRef'
+      - type: object
+        required:
+        - instanceUrl
+        properties:
+          instanceUrl:
+            $ref: '#/components/schemas/InstanceUrl'
+    StepAddAppRoles:
+      allOf:
+      - $ref: '#/components/schemas/StepRequest'
+      - type: object
+        required:
+        - appId
+        - roles
+        properties:
+          appId:
+            type: string
+            format: uuid
+          roles:
+            type: array
+            minItems: 1
+            items:
+              $ref: '#/components/schemas/RoleInput'
+    StepUpdateRoleDescriptions:
+      allOf:
+      - $ref: '#/components/schemas/StepRequest'
+      - type: object
+        required:
+        - appId
+        - roles
+        properties:
+          appId:
+            type: string
+            format: uuid
+          roles:
+            type: array
+            minItems: 1
+            description: Per role the complete new list of descriptions.
+            items:
+              $ref: '#/components/schemas/RoleInput'
+    StepAssignCompanyAdmin:
+      allOf:
+      - $ref: '#/components/schemas/StepRequest'
+      - type: object
+        required:
+        - companyId
+        - bpn
+        - applicantSub
+        properties:
+          companyId:
+            type: string
+            format: uuid
+          bpn:
+            $ref: '#/components/schemas/BpnL'
+          applicantSub:
+            type: string
+            format: uuid
+            description: sub of the applicant in the Portal IAM, from the application
+              (C1-M2).
+    StepCompanyRef:
+      allOf:
+      - $ref: '#/components/schemas/StepRequest'
+      - type: object
+        required:
+        - companyId
+        properties:
+          companyId:
+            type: string
+            format: uuid
+    StepResult:
+      type: object
+      required:
+      - stepRunId
+      - state
+      properties:
+        stepRunId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          description: Common contract of the steps (FRAMEWORK 4.4). All steps of
+            this module answer with DONE.
+          enum:
+          - DONE
+          - RUNNING
+    StepResultTemplate:
+      allOf:
+      - $ref: '#/components/schemas/StepResult'
+      - type: object
+        required:
+        - result
+        properties:
+          result:
+            type: object
+            required:
+            - appId
+            - iamClientId
+            - roleNames
+            properties:
+              appId:
+                type: string
+                format: uuid
+              iamClientId:
+                type: string
+                description: e.g. app-template-6f1c2a4e-8b0d-4c55-9a3e-2d7b1f0c9e11
+              roleNames:
+                type: array
+                description: All app roles on the template.
+                items:
+                  $ref: '#/components/schemas/RoleName'
+    StepResultInstanceClient:
+      allOf:
+      - $ref: '#/components/schemas/StepResult'
+      - type: object
+        required:
+        - result
+        properties:
+          result:
+            $ref: '#/components/schemas/AppInstanceClient'
+    StepResultAddAppRoles:
+      allOf:
+      - $ref: '#/components/schemas/StepResult'
+      - type: object
+        required:
+        - result
+        properties:
+          result:
+            type: object
+            required:
+            - appId
+            - addedRoles
+            - skippedRoles
+            properties:
+              appId:
+                type: string
+                format: uuid
+              addedRoles:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleName'
+              skippedRoles:
+                type: array
+                description: Already present on the template; descriptions unchanged.
+                items:
+                  $ref: '#/components/schemas/RoleName'
+    StepResultUpdateRoleDescriptions:
+      allOf:
+      - $ref: '#/components/schemas/StepResult'
+      - type: object
+        required:
+        - result
+        properties:
+          result:
+            type: object
+            required:
+            - appId
+            - updatedRoles
+            properties:
+              appId:
+                type: string
+                format: uuid
+              updatedRoles:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleName'
+    StepResultAssignCompanyAdmin:
+      allOf:
+      - $ref: '#/components/schemas/StepResult'
+      - type: object
+        required:
+        - result
+        properties:
+          result:
+            type: object
+            required:
+            - companyId
+            - userId
+            - portalRoles
+            properties:
+              companyId:
+                type: string
+                format: uuid
+              userId:
+                type: string
+                format: uuid
+              portalRoles:
+                type: array
+                description: Company portal roles after the step.
+                items:
+                  $ref: '#/components/schemas/PortalRoleName'
+    StepResultCompanyUsers:
+      allOf:
+      - $ref: '#/components/schemas/StepResult'
+      - type: object
+        required:
+        - result
+        properties:
+          result:
+            type: object
+            required:
+            - companyId
+            - userIds
+            properties:
+              companyId:
+                type: string
+                format: uuid
+              userIds:
+                type: array
+                description: 'disable-company-users: all bindings of the company with
+                  status
+
+                  DISABLED; enable-company-users: all with status ACTIVE.
+
+                  '
+                items:
+                  type: string
+                  format: uuid
+    EventBase:
+      type: object
+      required:
+      - specversion
+      - id
+      - source
+      - type
+      - time
+      - datacontenttype
+      - data
+      description: 'CloudEvent (CloudEvents 1.0, JSON event format, FRAMEWORK 6).
+        `type` is the event name,
+
+        the content is in `data`. Events never contain secrets, invitation codes or
+        names.
+
+        '
+      properties:
+        specversion:
+          const: '1.0'
+        id:
+          type: string
+          format: uuid
+        source:
+          const: urn:c2-m2
+        type:
+          type: string
+        time:
+          type: string
+          format: date-time
+        datacontenttype:
+          const: application/json
+        data:
+          type: object
+    EventAppClientTemplateCreated:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: AppClientTemplateCreated
+          data:
+            type: object
+            required:
+            - appId
+            - iamClientId
+            - roleNames
+            properties:
+              appId:
+                type: string
+                format: uuid
+              iamClientId:
+                type: string
+              roleNames:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleName'
+    EventAppInstanceClientCreated:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: AppInstanceClientCreated
+          data:
+            type: object
+            required:
+            - appInstanceClientId
+            - appId
+            - instanceKind
+            - iamClientId
+            - instanceUrl
+            properties:
+              appInstanceClientId:
+                type: string
+                format: uuid
+              appId:
+                type: string
+                format: uuid
+              instanceKind:
+                $ref: '#/components/schemas/InstanceKind'
+              offerSubscriptionId:
+                type:
+                - string
+                - 'null'
+                format: uuid
+              customerCompanyId:
+                type:
+                - string
+                - 'null'
+                format: uuid
+              iamClientId:
+                type: string
+              instanceUrl:
+                $ref: '#/components/schemas/InstanceUrl'
+    EventInstanceClientFields:
+      type: object
+      required:
+      - appInstanceClientId
+      - appId
+      - iamClientId
+      properties:
+        appInstanceClientId:
+          type: string
+          format: uuid
+        appId:
+          type: string
+          format: uuid
+        offerSubscriptionId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        iamClientId:
+          type: string
+    EventAppInstanceClientEnabled:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: AppInstanceClientEnabled
+          data:
+            $ref: '#/components/schemas/EventInstanceClientFields'
+    EventAppInstanceClientDisabled:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: AppInstanceClientDisabled
+          data:
+            $ref: '#/components/schemas/EventInstanceClientFields'
+    EventAppInstanceUrlUpdated:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: AppInstanceUrlUpdated
+          data:
+            type: object
+            required:
+            - appInstanceClientId
+            - appId
+            - instanceUrl
+            properties:
+              appInstanceClientId:
+                type: string
+                format: uuid
+              appId:
+                type: string
+                format: uuid
+              offerSubscriptionId:
+                type:
+                - string
+                - 'null'
+                format: uuid
+              instanceUrl:
+                $ref: '#/components/schemas/InstanceUrl'
+    EventAppRolesAdded:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: AppRolesAdded
+          data:
+            type: object
+            required:
+            - appId
+            - roleNames
+            properties:
+              appId:
+                type: string
+                format: uuid
+              roleNames:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleName'
+    EventAppRoleDescriptionsUpdated:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: AppRoleDescriptionsUpdated
+          data:
+            type: object
+            required:
+            - appId
+            - roleNames
+            properties:
+              appId:
+                type: string
+                format: uuid
+              roleNames:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleName'
+    EventUserAssignedToCompany:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: UserAssignedToCompany
+          data:
+            type: object
+            required:
+            - userId
+            - companyId
+            - via
+            - portalRoles
+            properties:
+              userId:
+                type: string
+                format: uuid
+              companyId:
+                type: string
+                format: uuid
+              via:
+                $ref: '#/components/schemas/JoinedVia'
+              portalRoles:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PortalRoleName'
+    EventUserRemovedFromCompany:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: UserRemovedFromCompany
+          data:
+            type: object
+            required:
+            - userId
+            - companyId
+            - reason
+            properties:
+              userId:
+                type: string
+                format: uuid
+              companyId:
+                type: string
+                format: uuid
+              reason:
+                $ref: '#/components/schemas/RemovalReason'
+    EventUserRolesChanged:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: UserRolesChanged
+          data:
+            type: object
+            required:
+            - userId
+            - companyId
+            - addedRoles
+            - removedRoles
+            properties:
+              userId:
+                type: string
+                format: uuid
+              companyId:
+                type: string
+                format: uuid
+              appId:
+                type:
+                - string
+                - 'null'
+                format: uuid
+                description: Only for app roles; missing or null for company portal
+                  roles.
+              addedRoles:
+                type: array
+                items:
+                  type: string
+              removedRoles:
+                type: array
+                items:
+                  type: string
+    EventCompanyUsersDisabled:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: CompanyUsersDisabled
+          data:
+            type: object
+            required:
+            - companyId
+            - userIds
+            properties:
+              companyId:
+                type: string
+                format: uuid
+              userIds:
+                type: array
+                items:
+                  type: string
+                  format: uuid
+    EventCompanyUsersEnabled:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        properties:
+          type:
+            const: CompanyUsersEnabled
+          data:
+            type: object
+            required:
+            - companyId
+            - userIds
+            properties:
+              companyId:
+                type: string
+                format: uuid
+              userIds:
+                type: array
+                items:
+                  type: string
+                  format: uuid
+    EventOspStaffRolesChanged:
+      allOf:
+      - $ref: '#/components/schemas/EventBase'
+      - type: object
+        description: Addition to the framework (open-points.md).
+        properties:
+          type:
+            const: OspStaffRolesChanged
+          data:
+            type: object
+            required:
+            - userId
+            - addedRoles
+            - removedRoles
+            properties:
+              userId:
+                type: string
+                format: uuid
+              addedRoles:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PortalRoleName'
+              removedRoles:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PortalRoleName'
+    Problem:
+      type: object
+      required:
+      - type
+      - title
+      - status
+      properties:
+        type:
+          type: string
+          description: Identifier, e.g. urn:c2-m2:problem:last-company-admin (list
+            in README section 12).
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        retryable:
+          type: boolean
+          description: Only for steps; true = temporary, false = permanent (FRAMEWORK
+            4.4).
+  responses:
+    Problem:
+      description: Error (RFC 9457), identifiers in README section 12
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  securitySchemes:
+    portalIam:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 'Token of the Portal IAM of the OSP (only when called via HTTP).
+        For people
+
+        with `sub`, `company_id` and `bpn` (only for a bound account), `given_name`,
+
+        `family_name` and the permissions on the client portal-core (FRAMEWORK 4.2).
+
+        '

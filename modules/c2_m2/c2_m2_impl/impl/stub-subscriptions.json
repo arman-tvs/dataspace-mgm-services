@@ -1,0 +1,11 @@
+{
+  "_comment": "Built-in stand-in of Subscriptions (C10-M1) for C2-M2, README 11.2 and 14.2. Fields as SubscriptionRef of C10-M1.",
+  "items": [
+    {
+      "offerSubscriptionId": "0b5d7e2a-3c4f-4a1b-9e8d-7f6a5b4c3d21",
+      "offerId": "6f1c2a4e-8b0d-4c55-9a3e-2d7b1f0c9e11",
+      "customerCompanyId": "c0000001-0000-4000-8000-000000000001",
+      "status": "ACTIVE"
+    }
+  ]
+}

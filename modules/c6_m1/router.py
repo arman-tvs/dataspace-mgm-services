@@ -22,63 +22,80 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""Stand-in of C6-M1 Connectors: create, list and read connectors of the own company
-(`ConnectorRegistered` leads to C3-M2 `register-connector`, FRAMEWORK 5.9) and the query of
-connectors by technical user. The company must be `ACTIVE` at C3-M1.
-"""
+"""HTTP layer of C6-M1 Connectors (README 7 to 9): token and permission from openapi.yaml, the scope
+`company` from the token, then `service.py` or `interface.py`."""
 from __future__ import annotations
 
-import datetime as dt
-import uuid
+from typing import Literal
 
-from fastapi import Body
+from fastapi import Body, Query, Response
 
-from portal_common import events, neighbours, standin
-from portal_common.problems import Problem
+from portal_common import standin
 
-from . import interface
-from .interface import MODULE, connectors
+from . import interface, service
+from .interface import MODULE
 
-STANDIN = True
 router = standin.router(MODULE)
+
+Role = Literal["provider", "host"]
+Type = Literal["COMPANY_CONNECTOR", "CONNECTOR_AS_A_SERVICE"]
+Status = Literal["ACTIVE", "INACTIVE"]
 
 
 def reset() -> None:
     interface.reset()
 
 
-@router.post("/connectors", status_code=201)
-def create(body: dict = Body(...), claims: dict = standin.perm(MODULE, "POST", "/connectors")):
-    cid = claims.get("company_id")
-    if not cid:
-        raise Problem(MODULE, 403, "forbidden", detail="no company")
-    if not str(body.get("endpoint", "")).startswith("https://") or not body.get("name"):
-        raise Problem(MODULE, 400, "validation", detail="name and https endpoint required")
-    company = neighbours.query(MODULE, "c3-m1", "query_company", companyId=cid)
-    if not company or company.get("status") != "ACTIVE":
-        raise Problem(MODULE, 409, "company-not-active")
-    con = {"connectorId": str(uuid.uuid4()), "companyId": cid, "name": body["name"], "endpoint": body["endpoint"],
-           "location": body.get("location"), "status": "ACTIVE", "technicalUserId": body.get("technicalUserId"),
-           "createdAt": dt.datetime.now(dt.UTC).isoformat()}
-    connectors[con["connectorId"]] = con
-    events.publish(MODULE, "ConnectorRegistered", {"connectorId": con["connectorId"], "companyId": cid,
-                                                   "endpoint": con["endpoint"]})
-    return con
-
-
+# ---------------------------------------------------------------- people (README 7, scope company)
 @router.get("/connectors")
-def list_own(claims: dict = standin.perm(MODULE, "GET", "/connectors")):
-    items = [c for c in connectors.values() if c["companyId"] == claims.get("company_id")]
-    return {"items": items, "page": 0, "size": len(items), "total": len(items)}
+def list_connectors(role: Role | None = None, type: Type | None = None, status: Status | None = None,
+                    page: int = Query(0, ge=0), size: int = Query(20, ge=1, le=100),
+                    claims: dict = standin.perm(MODULE, "GET", "/connectors")):
+    return service.list_connectors(claims.get("company_id"), role=role, type=type, status=status, page=page, size=size)
+
+
+@router.post("/connectors", status_code=201)
+def register_connector(body: dict = Body(...), claims: dict = standin.perm(MODULE, "POST", "/connectors")):
+    return service.register_connector(claims.get("company_id"), claims.get("sub"), body)
+
+
+@router.post("/connectors/as-a-service", status_code=201)
+def register_connector_as_a_service(body: dict = Body(...),
+                                    claims: dict = standin.perm(MODULE, "POST", "/connectors/as-a-service")):
+    return service.register_connector_as_a_service(claims.get("company_id"), claims.get("sub"), body)
 
 
 @router.get("/connectors/{connectorId}")
-def get_own(connectorId: str, claims: dict = standin.perm(MODULE, "GET", "/connectors/{connectorId}")):
-    con = connectors.get(connectorId)
-    standin.company_scope(MODULE, claims, con and con["companyId"])
-    return con
+def get_connector(connectorId: str, claims: dict = standin.perm(MODULE, "GET", "/connectors/{connectorId}")):
+    return service.get_connector(claims.get("company_id"), connectorId)
 
 
+@router.patch("/connectors/{connectorId}")
+def change_endpoint(connectorId: str, body: dict = Body(...),
+                    claims: dict = standin.perm(MODULE, "PATCH", "/connectors/{connectorId}")):
+    return service.change_endpoint(claims.get("company_id"), claims.get("sub"), connectorId, body)
+
+
+@router.delete("/connectors/{connectorId}", status_code=204)
+def delete_connector(connectorId: str, claims: dict = standin.perm(MODULE, "DELETE", "/connectors/{connectorId}")):
+    service.delete_connector(claims.get("company_id"), claims.get("sub"), connectorId)
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------- Process Orchestration (README 8)
+@router.post("/steps/deactivate-subscription-connectors")
+def deactivate_subscription_connectors(
+        body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/deactivate-subscription-connectors")):
+    return interface.deactivate_subscription_connectors(body)
+
+
+@router.post("/steps/unlink-technical-user")
+def unlink_technical_user(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/unlink-technical-user")):
+    return interface.unlink_technical_user(body)
+
+
+# ---------------------------------------------------------------- queries (README 9)
 @router.get("/internal/connectors")
-def by_technical_user(_: dict = standin.perm(MODULE, "GET", "/internal/connectors"), technicalUserId: str | None = None):
+def list_connectors_internal(technicalUserId: str | None = None,
+                             _: dict = standin.perm(MODULE, "GET", "/internal/connectors")):
     return interface.list_connectors_internal(technicalUserId=technicalUserId)
