@@ -50,6 +50,15 @@ JsonObject = dict[str, Any]
 _builtin: CoreServices | None = None
 
 
+class BuiltinConfigError(Exception):
+    """A file the built-in CSP stand-in reads is unusable. The message names the variable or setting
+    (never the path); `kind` is the audit error type (OPEN-QUESTIONS 11)."""
+
+    def __init__(self, variable: str, kind: str, reason: str):
+        super().__init__(f"the built-in CSP stand-in cannot use {variable}: {reason}")
+        self.kind = kind
+
+
 def reset() -> None:
     global _builtin
     _builtin = None
@@ -70,10 +79,15 @@ def _stub_companies() -> list[JsonObject]:
     path = os.environ.get("CSP_STUB_FILE", "")
     if not path:
         return []
-    data = _read_json(Path(path))
+    try:
+        data = _read_json(Path(path))
+    except (OSError, ValueError) as e:   # missing, unreadable or no JSON
+        raise BuiltinConfigError("CSP_STUB_FILE", "stub-file", type(e).__name__) from e
     items = data.get("companies", []) if isinstance(data, dict) else data
-    if not isinstance(items, list) or not all(isinstance(c, dict) for c in items):
-        raise ValueError("CSP_STUB_FILE must hold a list of company objects")
+    if not isinstance(items, list) or not all(
+            isinstance(c, dict) and isinstance(c.get("bpn"), str) and isinstance(c.get("homeOspId"), str)
+            for c in items):
+        raise BuiltinConfigError("CSP_STUB_FILE", "stub-file", "not a list of companies with bpn and homeOspId")
     return items
 
 
@@ -83,7 +97,10 @@ def _osp_company() -> list[JsonObject]:
     path = settings.resolve_path(settings.get("ospCompanyFile"))
     if path is None or not path.exists():
         return []
-    c = _read_json(path)
+    try:
+        c = _read_json(path)
+    except (OSError, ValueError) as e:   # unreadable or no JSON
+        raise BuiltinConfigError("ospCompanyFile", "osp-company-file", type(e).__name__) from e
     if not isinstance(c, dict) or not c.get("bpn"):
         return []
     address = raw if isinstance(raw := c.get("address"), dict) else {}
@@ -117,8 +134,8 @@ def call(operation: str, method: str, path: str, body: JsonObject | None = None,
          *, company_id: str | None = None, bpn: str | None = None) -> CspAnswer:
     """One call of the core services API (README 11.1).
     No answer from the CSP (timeout, connection, token endpoint, unreadable signing key) and, with the
-    built-in stand-in, an unreadable `CSP_STUB_FILE`: 502 `upstream-error`, retryable, with an audit
-    entry (README 12; OPEN-QUESTIONS 11)."""
+    built-in stand-in, an unusable `CSP_STUB_FILE` or `ospCompanyFile`: 502 `upstream-error`,
+    retryable, naming the file's variable, with an audit entry (README 12; OPEN-QUESTIONS 11)."""
     base = os.environ.get("CSP_URL", "")
     if base:
         try:
@@ -136,9 +153,9 @@ def call(operation: str, method: str, path: str, body: JsonObject | None = None,
     else:
         try:
             core = _builtin_core()
-        except (OSError, ValueError) as e:   # CSP_STUB_FILE unreadable, no JSON, or no list of company objects
-            store.record_audit(operation, company_id, bpn, None, "stub-file")
-            raise errors.upstream_error("the built-in CSP stand-in cannot read CSP_STUB_FILE") from e
+        except BuiltinConfigError as e:   # only the stand-in's own files; a settings fault stays as it is
+            store.record_audit(operation, company_id, bpn, None, e.kind)
+            raise errors.upstream_error(str(e)) from e
         status, answer = core.dispatch(osp_id(), method, path, body, params)
     store.record_audit(operation, company_id, bpn, int(status), csp_type(answer))
     return int(status), answer

@@ -548,6 +548,7 @@ def run_twice_at_once(monkeypatch, fn, *inputs):
         t.start()
     for t in threads:
         t.join(timeout=5)
+    assert not any(t.is_alive() for t in threads), "a thread did not finish: the race was not tested"
     assert errors_seen == []
 
 
@@ -574,3 +575,72 @@ def test_audit_list_is_capped(monkeypatch):
     for i in range(5):
         store.record_audit(f"op-{i}", None, None, 200)
     assert [a.operation for a in store.audit] == ["op-2", "op-3", "op-4"]
+
+
+# ---------------------------------------------------------------- team re-review of #31 (2026-11-06)
+def test_broken_osp_company_file_names_its_setting(tmp_path, monkeypatch):
+    """OPEN-QUESTIONS 11: the message and the audit name the file that is actually broken."""
+    from modules.c3_m2 import csp_client
+    (tmp_path / "osp-company.json").write_text("{not json")
+    with monkeypatch.context() as patched:   # only for this test body, not for the fixture's reset
+        patched.setattr(csp_client.settings, "resolve_path", lambda value: tmp_path / "osp-company.json")
+        csp_client.reset()
+        p = problem(interface.register_company, maschinenbau())
+    assert (p.status, p.name, p.ext["retryable"]) == (502, "upstream-error", True)
+    assert "ospCompanyFile" in (p.detail or "") and "CSP_STUB_FILE" not in (p.detail or "")
+    assert str(tmp_path) not in (p.detail or "")
+    assert [a.error_type for a in store.audit] == ["osp-company-file"]
+
+
+def test_settings_fault_is_not_blamed_on_a_file(monkeypatch):
+    """OPEN-QUESTIONS 11: a fault of the installation settings stays the settings' own error."""
+    from modules.c3_m2 import csp_client
+
+    def no_osp_id() -> str:
+        raise ValueError("setting 'ospId' is missing (FRAMEWORK 4.8)")
+    monkeypatch.setattr(csp_client, "osp_id", no_osp_id)
+    csp_client.reset()
+    with pytest.raises(ValueError, match="ospId"):
+        interface.register_company(maschinenbau())
+
+
+def test_stub_entry_without_home_osp_is_a_stub_file_error(tmp_path, monkeypatch):
+    bad = tmp_path / "stub.json"
+    bad.write_text(json.dumps([{"bpn": OTHER_BPN, "legalName": "Andere Beispiel AG", "country": "DE"}]))
+    monkeypatch.setenv("CSP_STUB_FILE", str(bad))
+    interface.reset()
+    p = problem(interface.find_companies, ebwoid=OTHER_EBWOID)
+    assert (p.name, p.ext["retryable"]) == ("upstream-error", True) and "CSP_STUB_FILE" in (p.detail or "")
+
+
+def test_moving_away_ends_a_waiting_return(monkeypatch):
+    """README 6.1: a late OperationCompleted of a return the company never finished must not revive it."""
+    bpn = register()
+    move_away(bpn)
+    answers_first(monkeypatch, (202, {"operationId": "operation-return"}))
+    assert interface.transfer_company(step(bpn=bpn, ebwoid=EBWOID))["state"] == "RUNNING"
+    move_away(bpn)                                        # the company moves away again meanwhile
+    row = store.registrations[COMPANY]
+    assert (row.status, row.pending_operation_id, row.returning) == ("TRANSFERRED_AWAY", None, False)
+    late = {"notificationId": "n-late-return", "type": "OperationCompleted", "operationId": "operation-return",
+            "outcome": "SUCCEEDED", "bpn": bpn}
+    p = problem(interface.receive_csp_notification, late)
+    assert (p.status, p.name) == (404, "unknown-company")
+    assert interface.get_csp_registration(companyId=COMPANY)["status"] == "TRANSFERRED_AWAY"
+    assert len(published("CompanyRegisteredAtCsp")) == 1
+
+
+def test_reset_holds_the_store_lock():
+    """store.reset() takes store.lock, so it waits for a change in progress."""
+    import threading
+    entered = threading.Event()
+
+    def reset_then_signal() -> None:
+        store.reset()
+        entered.set()
+    with store.lock:
+        t = threading.Thread(target=reset_then_signal)
+        t.start()
+        assert not entered.wait(0.2), "reset ran while another thread held the lock"
+    t.join(timeout=5)
+    assert entered.is_set() and not t.is_alive()

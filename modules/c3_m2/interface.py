@@ -210,6 +210,9 @@ def _mark_transferred_away(row: Registration) -> None:
     with unchanged values (README 6.4, 8.5; OPEN-QUESTIONS 14). No event for these resets."""
     with store.lock:
         row.status, row.did, row.membership = "TRANSFERRED_AWAY", None, "NONE"
+        # A registration or return still waiting at the CSP is over: forget its operation id, so a
+        # late OperationCompleted cannot find the company by it and revive it (README 6.1).
+        row.pending_operation_id, row.returning = None, False
         row.touch()
         stamp = store.now()
         for con in store.connectors.values():

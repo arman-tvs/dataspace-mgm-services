@@ -136,12 +136,13 @@ early_completions: dict[str, EarlyCompletion] = {}   # operation_id -> notificat
 
 
 def reset() -> None:
-    registrations.clear()
-    connectors.clear()
-    notifications.clear()
-    audit.clear()
-    early_completions.clear()
-    seed()
+    with lock:   # a request in flight never sees half-emptied tables
+        registrations.clear()
+        connectors.clear()
+        notifications.clear()
+        audit.clear()
+        early_completions.clear()
+        seed()
 
 
 def seed() -> None:
