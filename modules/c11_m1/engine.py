@@ -99,10 +99,18 @@ def _forget_applicant(event_type: str, data: dict) -> None:
             store.applicants.pop(data.get("applicationId"), None)
 
 
+def _applicant(data: dict) -> str | None:
+    """README 6.1 "applicant": from the table `applicant`, else `applicantSub` of the event."""
+    application_id = data.get("applicationId")
+    with store.LOCK:
+        known = store.applicants.get(application_id) if isinstance(application_id, str) else None
+    return known or data.get("applicantSub")
+
+
 def _apply(rule: Rule, event: dict) -> None:
     data = event.get("data") or {}
     if rule.recipients == "applicant":
-        sub = store.applicants.get(data.get("applicationId")) or data.get("applicantSub")
+        sub = _applicant(data)
         if not sub:
             log.info("rule %s: no applicant known for event %s", rule.id, event["id"])
             return

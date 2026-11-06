@@ -119,6 +119,14 @@ def test_a_failing_applicant_cleanup_is_logged_not_raised():
     assert store.processed[store.event_key(event)]["status"] == "FAILED"
 
 
+def test_an_application_id_that_is_not_an_id_still_informs_the_applicant_of_the_event():
+    c11.on_event(submitted())
+    c11.on_event(ev("c1-m2", "ApplicationCompleted", applicationId={"not": "an id"}, companyId=COMPANY,
+                    applicantSub=APPLICANT))
+    [info] = of_type("APPLICATION_COMPLETED")
+    assert info["receiverSub"] == APPLICANT
+
+
 def test_approval_closes_the_review_task_for_everyone():
     c11.on_event(submitted())
     c11.on_event(ev("c1-m3", "ApplicationApproved", applicationId=APPLICATION, companyId=COMPANY))
