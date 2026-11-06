@@ -27,7 +27,9 @@ calls to the neighbours C3-M1, C2-M3 and C10-M1 (README 11). No token checks her
 the calling company and person."""
 from __future__ import annotations
 
+import ipaddress
 import json
+import re
 import uuid
 from urllib.parse import urlparse
 
@@ -90,20 +92,46 @@ def _known_countries() -> set[str] | None:
     return {c["code"] for c in json.loads(path.read_text(encoding="utf-8")).get("countries", [])}
 
 
+_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
+_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
+def _valid_host(host: str) -> bool:
+    """IP address, or DNS name of letters, digits and hyphens (RFC 1123), as the CSP discovery stores it."""
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    labels = host.rstrip(".").split(".")
+    return (len(host) <= 253 and all(_LABEL.fullmatch(label) for label in labels)
+            and not all(label.isdigit() for label in labels))
+
+
+def _endpoint_error(endpoint) -> str | None:
+    """None for a usable HTTPS endpoint, otherwise the message (never echoing the value, FRAMEWORK 4.6)."""
+    if not isinstance(endpoint, str) or not endpoint or len(endpoint) > 2000 or not endpoint.isascii() \
+            or any(ch.isspace() or ord(ch) < 32 or ch in "\\\x7f" for ch in endpoint) or _PERCENT.search(endpoint):
+        return "HTTPS URL"
+    try:
+        url = urlparse(endpoint)
+        port = url.port   # raises ValueError for an invalid port
+    except ValueError:
+        return "HTTPS URL"
+    if url.username is not None or url.password is not None:   # no credentials in data or events
+        return "must not contain user information"
+    if url.scheme != "https" or not url.hostname or not _valid_host(url.hostname) or url.fragment \
+            or port == 0 or endpoint.endswith("#"):
+        return "HTTPS URL"
+    return None
+
+
 def _check_input(name, endpoint, location, technical_user_id=None) -> None:
     errors = []
     if not isinstance(name, str) or not name or len(name) > 255:
         errors.append({"field": "name", "message": "1 to 255 characters"})
-    endpoint = endpoint if isinstance(endpoint, str) else ""
-    try:
-        url = urlparse(endpoint)
-        _ = url.port   # raises ValueError for an invalid port
-    except ValueError:
-        url = None
-    if url is None or url.scheme != "https" or not url.hostname or len(endpoint) > 2000:
-        errors.append({"field": "endpoint", "message": "HTTPS URL"})
-    elif url.username is not None or url.password is not None:   # no credentials in data or events (FRAMEWORK 4.6)
-        errors.append({"field": "endpoint", "message": "must not contain user information"})
+    if (message := _endpoint_error(endpoint)) is not None:
+        errors.append({"field": "endpoint", "message": message})
     countries = _known_countries()
     if technical_user_id is not None and not _is_uuid(technical_user_id):
         errors.append({"field": "technicalUserId", "message": "UUID"})
