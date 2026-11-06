@@ -30,16 +30,20 @@ with the column names of README 5. `interface.registration_view` maps a registra
 camelCase of the API. Nothing here holds company data beyond the BPN, and the audit log holds no
 response content and no tokens (README 5).
 
-Concurrency: the dicts are not locked. Steps run in the worker thread of C12, HTTP requests (the
-CSP's callbacks) in FastAPI's thread pool. A conflict needs two calls for the same company at the
-same moment, for example a repeated step while the callback arrives; the code then still converges
-because every write is idempotent, but an event could go out twice. A database with transactions
-(README 4 `DATABASE_URL`, OPEN-QUESTIONS 13) replaces this module after the hackathon.
+Concurrency: steps run in the worker thread of C12, HTTP requests (the CSP's callbacks) in FastAPI's
+thread pool. `lock` serialises every check-then-change of the tables together with the event it
+publishes, so a repeated step racing a callback changes a row once and publishes once (FRAMEWORK
+4.4). Calls to the CSP are made outside the lock; two concurrent calls of the same step may both
+call the CSP (its calls are idempotent), but only the first changes the row and publishes. A
+database with transactions (README 4 `DATABASE_URL`, OPEN-QUESTIONS 13) replaces this module after
+the hackathon. The audit list is capped at `AUDIT_MAX` entries (oldest dropped) until it moves to
+the table `audit_entry`.
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
+import threading
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -120,6 +124,9 @@ class EarlyCompletion:
 
 
 EARLY_COMPLETIONS_MAX = 100   # bound, so unknown operation ids from the CSP cannot grow memory without limit
+AUDIT_MAX = 10_000            # bound of the in-memory audit list (README 5 `audit_entry`), oldest dropped first
+
+lock = threading.RLock()      # see the module docstring: check-then-change of the tables plus its event
 
 registrations: dict[str, Registration] = {}    # company_id -> row
 connectors: dict[str, Connector] = {}          # connector_id -> row
@@ -184,4 +191,7 @@ def keep_early_completion(early: EarlyCompletion) -> None:
 def record_audit(operation: str, company_id: str | None, bpn: str | None, http_status: int | None,
                  error_type: str | None = None) -> None:
     """One `audit_entry` (README 5): only status and error type, never the body or a token."""
-    audit.append(AuditEntry(now(), operation, company_id, bpn, http_status, error_type))
+    with lock:
+        audit.append(AuditEntry(now(), operation, company_id, bpn, http_status, error_type))
+        if len(audit) > AUDIT_MAX:
+            del audit[:len(audit) - AUDIT_MAX]

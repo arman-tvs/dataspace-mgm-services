@@ -116,8 +116,9 @@ def csp_type(answer: object) -> str | None:
 def call(operation: str, method: str, path: str, body: JsonObject | None = None, params: JsonObject | None = None,
          *, company_id: str | None = None, bpn: str | None = None) -> CspAnswer:
     """One call of the core services API (README 11.1).
-    No answer from the CSP (timeout, connection, token endpoint, unreadable signing key):
-    502 `upstream-error`, retryable."""
+    No answer from the CSP (timeout, connection, token endpoint, unreadable signing key) and, with the
+    built-in stand-in, an unreadable `CSP_STUB_FILE`: 502 `upstream-error`, retryable, with an audit
+    entry (README 12; OPEN-QUESTIONS 11)."""
     base = os.environ.get("CSP_URL", "")
     if base:
         try:
@@ -133,7 +134,12 @@ def call(operation: str, method: str, path: str, body: JsonObject | None = None,
             # every retry of C12 would fail the same way: drop it, the retry fetches a new one.
             csp.reset()
     else:
-        status, answer = _builtin_core().dispatch(osp_id(), method, path, body, params)
+        try:
+            core = _builtin_core()
+        except (OSError, ValueError) as e:   # CSP_STUB_FILE unreadable, no JSON, or no list of company objects
+            store.record_audit(operation, company_id, bpn, None, "stub-file")
+            raise errors.upstream_error("the built-in CSP stand-in cannot read CSP_STUB_FILE") from e
+        status, answer = core.dispatch(osp_id(), method, path, body, params)
     store.record_audit(operation, company_id, bpn, int(status), csp_type(answer))
     return int(status), answer
 
