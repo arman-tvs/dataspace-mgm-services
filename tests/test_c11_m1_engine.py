@@ -100,6 +100,25 @@ def test_the_same_id_from_another_source_is_another_event():
         ["APPLICATION_SUBMITTED", "PROCESS_STEP_FAILED", "REVIEW_CASE_OPENED"]
 
 
+def test_a_failing_closing_step_still_applies_the_rules_and_marks_the_event_failed(monkeypatch):
+    from modules.c11_m1 import closing
+
+    def broken(event):
+        raise RuntimeError("closing broke")
+    monkeypatch.setattr(closing, "handle", broken)
+    event = submitted()
+    c11.on_event(event)
+    assert sorted(n["type"] for n in c11.notifications) == ["APPLICATION_SUBMITTED", "REVIEW_CASE_OPENED"]
+    assert store.processed[store.event_key(event)]["status"] == "FAILED"
+
+
+def test_a_failing_applicant_cleanup_is_logged_not_raised():
+    c11.on_event(submitted())   # a stored applicant row: dropping a row by an unhashable key then raises
+    event = ev("c1-m2", "ApplicationWithdrawn", applicationId={"not": "an id"}, companyId=COMPANY)
+    c11.on_event(event)   # dropping the applicant row fails; the relay must not see the error
+    assert store.processed[store.event_key(event)]["status"] == "FAILED"
+
+
 def test_approval_closes_the_review_task_for_everyone():
     c11.on_event(submitted())
     c11.on_event(ev("c1-m3", "ApplicationApproved", applicationId=APPLICATION, companyId=COMPANY))

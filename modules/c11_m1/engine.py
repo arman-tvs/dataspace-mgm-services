@@ -63,22 +63,37 @@ def handle(event: dict) -> None:
         store.processed[key] = {"type": event_type, "receivedAt": store.now(), "status": "DONE"}
     data = event.get("data") or {}
 
-    closing.handle(event)
+    # The event is already marked processed, so no step may raise past this point: a failing part
+    # is logged and marks the event FAILED, and the other parts still run.
+    _guarded(key, "closing", lambda: closing.handle(event))
+    _guarded(key, "applicant", lambda: _remember_applicant(event_type, data))
+
+    off = disabled_rules()
+    for rule in rules.for_event(event_type):
+        if rule.id not in off:
+            _guarded(key, f"rule {rule.id}", lambda rule=rule: _apply(rule, event))
+    _guarded(key, "applicant", lambda: _forget_applicant(event_type, data))
+
+
+def _guarded(key: tuple[str, str], part: str, run) -> None:
+    """Run one part of the event handling; on an error log it and mark the event FAILED (README 6.4)."""
+    try:
+        run()
+    except Exception:   # one broken part must not stop the others of the same event
+        log.exception("%s failed for event %s", part, key[1])
+        with store.LOCK:
+            store.processed[key]["status"] = "FAILED"
+
+
+def _remember_applicant(event_type: str, data: dict) -> None:
+    """README 5 table `applicant`: the `sub` of the person who submitted the application."""
     if event_type == "ApplicationSubmitted" and data.get("applicationId") and data.get("applicantSub"):
         with store.LOCK:
             store.applicants[data["applicationId"]] = data["applicantSub"]
 
-    off = disabled_rules()
-    for rule in rules.for_event(event_type):
-        if rule.id in off:
-            continue
-        try:
-            _apply(rule, event)
-        except Exception:   # one broken rule must not stop the others of the same event
-            log.exception("rule %s failed for event %s", rule.id, event_id)
-            with store.LOCK:
-                store.processed[key]["status"] = "FAILED"
 
+def _forget_applicant(event_type: str, data: dict) -> None:
+    """README 5 table `applicant`: the row goes when the application has ended."""
     if event_type in _APPLICATION_ENDED:
         with store.LOCK:
             store.applicants.pop(data.get("applicationId"), None)
