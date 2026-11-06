@@ -56,33 +56,29 @@ def handle(event: dict) -> None:
     if not event_id or not event_type:
         log.warning("event without id or type ignored")
         return
-    key = store.event_key(event)
-    with store.LOCK:
-        if key in store.processed:
-            return
-        store.processed[key] = {"type": event_type, "receivedAt": store.now(), "status": "DONE"}
+    if not store.first_seen(event):
+        return
     data = event.get("data") or {}
 
     # The event is already marked processed, so no step may raise past this point: a failing part
     # is logged and marks the event FAILED, and the other parts still run.
-    _guarded(key, "closing", lambda: closing.handle(event))
-    _guarded(key, "applicant", lambda: _remember_applicant(event_type, data))
+    _guarded(event, "closing", lambda: closing.handle(event))
+    _guarded(event, "applicant", lambda: _remember_applicant(event_type, data))
 
     off = disabled_rules()
     for rule in rules.for_event(event_type):
         if rule.id not in off:
-            _guarded(key, f"rule {rule.id}", lambda rule=rule: _apply(rule, event))
-    _guarded(key, "applicant", lambda: _forget_applicant(event_type, data))
+            _guarded(event, f"rule {rule.id}", lambda rule=rule: _apply(rule, event))
+    _guarded(event, "applicant", lambda: _forget_applicant(event_type, data))
 
 
-def _guarded(key: tuple[str, str], part: str, run) -> None:
+def _guarded(event: dict, part: str, run) -> None:
     """Run one part of the event handling; on an error log it and mark the event FAILED (README 6.4)."""
     try:
         run()
     except Exception:   # one broken part must not stop the others of the same event
-        log.exception("%s failed for event %s", part, key[1])
-        with store.LOCK:
-            store.processed[key]["status"] = "FAILED"
+        log.exception("%s failed for event %s", part, event.get("id"))
+        store.mark_failed(event)
 
 
 def _remember_applicant(event_type: str, data: dict) -> None:

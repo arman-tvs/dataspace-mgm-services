@@ -127,6 +127,15 @@ def test_an_application_id_that_is_not_an_id_still_informs_the_applicant_of_the_
     assert info["receiverSub"] == APPLICANT
 
 
+def test_processed_events_and_dedup_keys_are_bounded_oldest_first(monkeypatch):
+    monkeypatch.setattr(store, "SEEN_MAX", 3)
+    sent = [ev("c12-m1", "ProcessStepFailed", processId=f"p{n}", stepKey="s") for n in range(5)]
+    for event in sent:
+        c11.on_event(event)
+    assert list(store.processed) == [store.event_key(e) for e in sent[2:]]
+    assert len(store._dedup) == 3 and len(c11.notifications) == 5   # notifications themselves stay
+
+
 def test_approval_closes_the_review_task_for_everyone():
     c11.on_event(submitted())
     c11.on_event(ev("c1-m3", "ApplicationApproved", applicationId=APPLICATION, companyId=COMPANY))
