@@ -25,8 +25,8 @@
 #################################################################################
 """Data of C11-M1 Notifications (README 5), kept in memory for the hackathon.
 
-The shared contract of the team: `engine`, `closing`, `api`, `worker` and `recipients` read and
-write the inbox only through this module. Three threads use it (event relay, worker, HTTP
+The shared contract of the team: the other files of the module read and write the inbox only
+through this module. Three threads use it (event relay, worker, HTTP
 requests), so every read-modify-write runs under `LOCK`; slow work (neighbour calls) never does.
 """
 from __future__ import annotations
