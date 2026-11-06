@@ -37,6 +37,9 @@ dependencies = [
     "pyyaml>=6.0",
     "pyjwt[crypto]>=2.9",
     "python-multipart>=0.0.9",
+    "sqlalchemy>=2.1.8",
+    "alembic>=1.20.1",
+    "pg8000>=1.31.6",
 ]
 
 [dependency-groups]

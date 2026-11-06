@@ -20,119 +20,120 @@
 #  that the code is correct.
 #
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
-#  Assisted-By: Claude Code (claude-opus-5-5)
+#  Assisted-By: GitHub Copilot (claude-opus-5-5)
 #################################################################################
-"""Public interface of the C2-M2 stand-in: `assign-company-admin` (binds the applicant in the test
-IAM), client template and instance clients of apps, and the queries on instance clients."""
+"""Public interface of C2-M2 Users and App Access: the steps of README section 8 and the queries of
+section 9, called in-process without a token (AGENTS.md, call convention)."""
 from __future__ import annotations
 
-import datetime as dt
+from collections.abc import Callable
 
-from portal_common import events, standin
-from portal_common.problems import Problem
-from tools import iam_backend
+from pydantic import BaseModel
 
-MODULE = "c2-m2"
-templates: dict[str, dict] = {}          # appId -> template
-instance_clients: dict[str, dict] = {}   # id -> instance client
+from . import module
+from .c2_m2_api.exception import C2M2BaseException
+from .c2_m2_api.model.utils import MODULE
+from .c2_m2_rs_api import ExceptionTranslator
+
+__all__ = [
+    "MODULE", "add_app_roles", "assign_company_admin", "create_client_template", "create_instance_client",
+    "disable_company_users", "disable_instance_client", "enable_company_users", "enable_instance_client",
+    "get_app_instance_client", "list_app_instance_clients", "list_app_roles", "list_company_user_refs", "reset",
+    "update_instance_url", "update_role_descriptions",
+]
 
 
 def reset() -> None:
-    templates.clear()
-    instance_clients.clear()
+    module.reset()
 
 
-def assign_company_admin(input: dict) -> dict:
-    iam, uid = iam_backend.backend(MODULE), input.get("applicantSub")
-    if not uid or iam.find(uid) is None:
-        raise Problem(MODULE, 404, "not-found", detail="account unknown", retryable=False)
-    person = iam.person(uid)
-    if person["companyId"] not in (None, input.get("companyId")):
-        raise Problem(MODULE, 409, "account-bound", retryable=False)
-    if person["companyId"] != input.get("companyId") or "Company Admin" not in person["portalRoles"]:
-        iam.bind(uid, input.get("companyId"), input.get("bpn"))
-        iam.add_portal_roles(uid, ["Company Admin"])
-        events.publish(MODULE, "UserAssignedToCompany", {"userId": uid, "companyId": input.get("companyId"),
-                                                         "via": "ONBOARDING", "portalRoles": ["Company Admin"]})
-    return standin.step_reply(input, {"userId": uid})
+def _json(value):
+    """The JSON body of the HTTP form (call convention): models as camelCase dicts."""
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, list):
+        return [_json(v) for v in value]
+    return value
 
 
+def _step(input: dict, action: Callable[[dict], BaseModel]) -> dict:
+    """Step answer of FRAMEWORK 4.4; errors as Problem Details that always carry `retryable` (README 12)."""
+    try:
+        result = action(input if isinstance(input, dict) else {})
+    except C2M2BaseException as exc:
+        raise ExceptionTranslator.to_problem(exc, is_step=True) from exc
+    return {"stepRunId": input.get("stepRunId"), "state": "DONE", "result": _json(result)}
+
+
+def _query(action: Callable[[], object]):
+    try:
+        return _json(action())
+    except C2M2BaseException as exc:
+        raise ExceptionTranslator.to_problem(exc) from exc
+
+
+def _as_list(value: list[str] | str | None) -> list[str]:
+    return [value] if isinstance(value, str) else list(value or [])
+
+
+# -- steps (section 8) ------------------------------------------------------------------------------
 def create_client_template(input: dict) -> dict:
-    app_id = input.get("appId")
-    if not input.get("roles"):
-        raise Problem(MODULE, 400, "validation", detail="roles", retryable=False)
-    if app_id not in templates:
-        templates[app_id] = {"appId": app_id, "clientId": f"app-{standin.stable_id('app', app_id)[:8]}",
-                             "roles": [r if isinstance(r, dict) else {"name": r} for r in input["roles"]],
-                             "appName": input.get("appName")}
-        events.publish(MODULE, "AppClientTemplateCreated", {"appId": app_id})
-    return standin.step_reply(input, {"clientId": templates[app_id]["clientId"]})
+    return _step(input, module.current().apps.create_client_template)
 
 
 def create_instance_client(input: dict) -> dict:
-    key = (input.get("appId"), input.get("offerSubscriptionId"))
-    ic = next((c for c in instance_clients.values() if (c["appId"], c["offerSubscriptionId"]) == key), None)
-    if ic is None:
-        iid = standin.stable_id("instance-client", *key)
-        ic = {"id": iid, "appId": key[0], "offerSubscriptionId": key[1], "customerCompanyId": input.get("customerCompanyId"),
-              "instanceKind": input.get("instanceKind"), "instanceUrl": input.get("instanceUrl"),
-              "iamClientId": f"app-{iid[:8]}", "status": "INACTIVE",
-              "createdAt": dt.datetime.now(dt.UTC).isoformat()}
-        instance_clients[iid] = ic
-        events.publish(MODULE, "AppInstanceClientCreated", {"appInstanceClientId": iid, "appId": key[0]})
-    return standin.step_reply(input, {"id": ic["id"], "iamClientId": ic["iamClientId"]})
-
-
-def _set_status(input: dict, status: str, event: str) -> dict:
-    ic = instance_clients.get(input.get("appInstanceClientId"))
-    if ic is None:
-        raise Problem(MODULE, 404, "not-found", retryable=False)
-    if ic["status"] != status:
-        ic["status"] = status
-        events.publish(MODULE, event, {"appInstanceClientId": ic["id"], "appId": ic["appId"]})
-    return standin.step_reply(input, {"id": ic["id"], "status": status})
+    return _step(input, module.current().apps.create_instance_client)
 
 
 def enable_instance_client(input: dict) -> dict:
-    return _set_status(input, "ACTIVE", "AppInstanceClientEnabled")
+    return _step(input, module.current().apps.enable_instance_client)
 
 
 def disable_instance_client(input: dict) -> dict:
-    return _set_status(input, "INACTIVE", "AppInstanceClientDisabled")
+    return _step(input, module.current().apps.disable_instance_client)
 
 
-def list_app_instance_clients(*, appId: str | None = None, offerSubscriptionId: str | None = None, **_other) -> list:
-    """The stand-in filters by `appId` and `offerSubscriptionId` only."""
-    return [c for c in instance_clients.values()
-            if (not appId or c["appId"] == appId) and (not offerSubscriptionId or c["offerSubscriptionId"] == offerSubscriptionId)]
+def update_instance_url(input: dict) -> dict:
+    return _step(input, module.current().apps.update_instance_url)
 
 
-def get_app_instance_client(*, id: str) -> dict:
-    if id not in instance_clients:
-        raise Problem(MODULE, 404, "not-found")
-    return instance_clients[id]
+def add_app_roles(input: dict) -> dict:
+    return _step(input, module.current().apps.add_app_roles)
 
 
-def list_app_roles(*, appId: list[str] | str | None = None, lang: str = "en", **_other) -> list[dict]:
-    """9.1: roles of the client templates, in the order of the request."""
-    def described(r: dict) -> dict:
-        ds = r.get("descriptions") or []
-        text = next((d["text"] for d in ds if d.get("lang") == lang), None) or \
-            next((d["text"] for d in ds if d.get("lang") == "en"), None) or (ds[0]["text"] if ds else None)
-        return {"name": r["name"], "description": text, "descriptions": ds}
-    ids = [appId] if isinstance(appId, str) else appId or []
-    return [{"appId": a, "templateExists": a in templates,
-             "roles": sorted((described(r) for r in templates[a]["roles"]), key=lambda r: r["name"]) if a in templates else []}
-            for a in ids]
+def update_role_descriptions(input: dict) -> dict:
+    return _step(input, module.current().apps.update_role_descriptions)
 
 
-def list_company_user_refs(*, companyId: str, portalRole: str | None = None, status: list[str] | str | None = None,
-                           **_other) -> list[dict]:
-    """9.4: accounts bound to the company in the test IAM (all `ACTIVE`), optionally with a portal role."""
-    wanted = [status] if isinstance(status, str) else status or ["ACTIVE"]
-    if "ACTIVE" not in wanted:
-        return []
-    return [{"userId": uid, "status": "ACTIVE"} for uid in iam_backend.backend(MODULE).users_of_company(companyId, portalRole)]
+def assign_company_admin(input: dict) -> dict:
+    return _step(input, module.current().users.assign_company_admin)
 
 
-__getattr__ = standin.missing_interface(MODULE)   # steps and queries not implemented yet: stand-in
+def disable_company_users(input: dict) -> dict:
+    return _step(input, module.current().users.disable_company_users)
+
+
+def enable_company_users(input: dict) -> dict:
+    return _step(input, module.current().users.enable_company_users)
+
+
+# -- queries (section 9) ----------------------------------------------------------------------------
+def list_app_roles(*, appId: list[str] | str | None = None, lang: str | None = None, **_other) -> list[dict]:
+    return _query(lambda: module.current().apps.list_app_roles(_as_list(appId), lang))
+
+
+def list_app_instance_clients(*, appId: str | None = None, offerSubscriptionId: str | None = None,
+                              customerCompanyId: str | None = None, instanceKind: str | None = None,
+                              status: list[str] | str | None = None, **_other) -> list[dict]:
+    return _query(lambda: module.current().apps.list_app_instance_clients(
+        app_id=appId, offer_subscription_id=offerSubscriptionId, customer_company_id=customerCompanyId,
+        instance_kind=instanceKind, statuses=_as_list(status)))
+
+
+def get_app_instance_client(*, id: str) -> dict:  # noqa: A002 - openapi name
+    return _query(lambda: module.current().apps.get_app_instance_client(id))
+
+
+def list_company_user_refs(*, companyId: str | None = None, portalRole: str | None = None,
+                           status: list[str] | str | None = None, **_other) -> list[dict]:
+    return _query(lambda: module.current().users.list_company_user_refs(companyId, portalRole, status))
