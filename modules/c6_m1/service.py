@@ -116,7 +116,8 @@ def _is_uuid(value) -> bool:
 
 
 def _live() -> list[dict]:
-    return [c for c in connectors.values() if c["status"] != INACTIVE]
+    with LOCK:   # a concurrent insert or delete must not change the dict while it is read
+        return [c for c in connectors.values() if c["status"] != INACTIVE]
 
 
 def _check_duplicate(name: str, endpoint: str, ignore: str | None = None) -> None:
@@ -191,7 +192,8 @@ def list_connectors(company_id: str | None, *, role: str | None = None, type: st
             return False
         return c["status"] == status if status else c["status"] != INACTIVE
 
-    items = sorted((c for c in connectors.values() if matches(c)), key=lambda c: (c["created_at"], c["id"]))
+    with LOCK:
+        items = sorted((c for c in connectors.values() if matches(c)), key=lambda c: (c["created_at"], c["id"]))
     return {"items": [view(c) for c in items[page * size:(page + 1) * size]], "page": page, "size": size,
             "total": len(items)}
 
@@ -233,7 +235,8 @@ def register_connector_as_a_service(company_id: str | None, sub: str | None, bod
 
 def get_connector(company_id: str | None, connector_id: str) -> dict:
     """7.4"""
-    return view(_visible(connector_id, _own_company(company_id)))
+    with LOCK:
+        return view(_visible(connector_id, _own_company(company_id)))
 
 
 def change_endpoint(company_id: str | None, sub: str | None, connector_id: str, body: dict) -> dict:
