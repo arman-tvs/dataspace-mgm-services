@@ -477,3 +477,28 @@ def test_uuid_casing_does_not_matter(api):
 def test_subscription_id_casing_does_not_matter(api):
     assert register_caas(api, offerSubscriptionId=SUB.upper()).json()["offerSubscriptionId"] == SUB
     assert problem(register_caas(api, name="b", endpoint="https://b.example/dsp"), 409, "subscription-linked")
+
+
+MALFORMED_ENDPOINTS = ["https://edc example.com/dsp", "https://edc.example/ds p", "https://edc.example/dsp\n",
+                       "https://edc.example\t/dsp", "https://-bad-.example/dsp", "https://edc..example/dsp",
+                       "https://edc_x.example/dsp", "https://.example/", "https://1.2.3.4.5/",
+                       "https://edc.example:0/dsp", "https://edc.example/dsp#frag", "https://ex%41mple.com/",
+                       "https://edc.example/%zz", "https://édc.example/", "https://edc.example\\@evil/",
+                       "https:edc.example/dsp", "https:///edc.example", "https://[zz]/dsp"]
+
+
+@pytest.mark.parametrize("endpoint", MALFORMED_ENDPOINTS)
+def test_malformed_endpoint_is_neither_stored_nor_published(api, endpoint):
+    assert problem(register(api, endpoint=endpoint), 400, "validation")
+    con = register(api).json()["connectorId"]
+    assert problem(api.patch(f"{BASE_PATH}/connectors/{con}", headers=h("erika"),
+                             json={"endpoint": endpoint}), 400, "validation")
+    assert interface.connectors[con]["endpoint"] == ENDPOINT
+    assert len(published("ConnectorRegistered")) == 1 and not published("ConnectorEndpointChanged")
+
+
+@pytest.mark.parametrize("endpoint", ["https://edc.example/dsp", "https://EDC.Example.com:8443/api/v1/dsp?x=1",
+                                      "https://10.0.0.5/dsp", "https://[2001:db8::1]:443/dsp", "https://edc-svc/dsp",
+                                      "https://edc.example/a%20b"])
+def test_valid_endpoints_are_accepted(api, endpoint):
+    assert register(api, endpoint=endpoint).status_code == 201
