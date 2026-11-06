@@ -93,6 +93,12 @@ def reset() -> None:
         thread.join(timeout=5)
 
 
+def pending() -> int:
+    """The number of jobs waiting in the queue, not counting one that is running (tests, diagnostics)."""
+    with _cond:
+        return len(_jobs)
+
+
 def _ensure_thread() -> None:
     """Start the worker thread on first use; the caller holds `_cond`."""
     global _thread
