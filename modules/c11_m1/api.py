@@ -26,8 +26,8 @@
 """HTTP operations on the own inbox (README 7).
 
 The own inbox (README 4, 6.3): personal notifications with the caller's `sub`, plus staff
-notifications whose permission is in the token. Read and hidden state is kept per person, also
-for staff notifications (`store.state`). A notification outside the own inbox gives 404.
+notifications whose permission is in the token. Read and hidden state is kept per person
+(`marks`). A notification outside the own inbox gives 404.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
-from modules.c11_m1 import store
+from modules.c11_m1 import marks, store
 from portal_common import problems, spec, sse, tokens
 from portal_common.problems import Problem
 
@@ -49,16 +49,11 @@ def _perm(method: str, path: str):
     return Depends(tokens.require_spec(MODULE, method, path))
 
 
-def _state(n: dict, sub: str | None) -> dict:
-    """README 5 `notification_state` of one person; empty if they never read or hid it."""
-    return store.state.get((n["notificationId"], sub), {})
-
-
 def to_view(n: dict, sub: str | None) -> dict:
     """Schema `Notification` with `read` for the calling person (README 7.3)."""
     return {"notificationId": n["notificationId"], "type": n["type"], "topic": n["topic"],
             "companyId": n["companyId"], "subjectType": n["subjectType"], "subjectId": n["subjectId"],
-            "content": n["content"], "forStaff": n["forStaff"], "read": _state(n, sub).get("readAt") is not None,
+            "content": n["content"], "forStaff": n["forStaff"], "read": marks.is_read(n, sub),
             "done": n["done"], "createdAt": n["createdAt"], "doneAt": n["doneAt"]}
 
 
@@ -67,7 +62,7 @@ def own_inbox(claims: dict) -> list[dict]:
     sub = claims.get("sub")
     with store.LOCK:
         return [to_view(n, sub) for n in store.notifications
-                if store.visible_to(n, claims) and not _state(n, sub).get("hiddenAt")]
+                if store.visible_to(n, claims) and not marks.is_hidden(n, sub)]
 
 
 def _utc(value: str | dt.datetime) -> dt.datetime:
@@ -93,11 +88,6 @@ def _find(notification_id: str, claims: dict) -> dict:
     raise Problem(MODULE, 404, "not-found")
 
 
-def _mark(n: dict, sub: str | None, **fields: str | None) -> None:
-    """Set fields of the caller's `notification_state` row (README 5); the caller holds `store.LOCK`."""
-    store.state.setdefault((n["notificationId"], sub), {"readAt": None, "hiddenAt": None}).update(fields)
-
-
 @router.get("/notifications")
 def list_notifications(claims: dict = _perm("GET", "/notifications"),
                        topic: Literal["INFO", "ACTION"] | None = None,
@@ -121,7 +111,7 @@ def count_notifications(claims: dict = _perm("GET", "/notifications/count")):
     items = own_inbox(claims)
     return {"total": len(items),
             "unread": sum(not v["read"] for v in items),
-            "openTasks": sum(v["topic"] == "ACTION" and v["done"] is False for v in items),
+            "openTasks": sum(marks.is_open_task(v) for v in items),
             "unreadInfo": sum(v["topic"] == "INFO" and not v["read"] for v in items)}
 
 
@@ -144,31 +134,19 @@ def get_notification(notificationId: str, claims: dict = _perm("GET", "/notifica
 @router.post("/notifications/{notificationId}/read", status_code=204)
 def mark_read(notificationId: str, claims: dict = _perm("POST", "/notifications/{notificationId}/read")):
     """README 7.4: set `read_at` for the caller; idempotent, the first time is kept."""
-    n = _find(notificationId, claims)
-    sub = claims.get("sub")
-    with store.LOCK:
-        if not _state(n, sub).get("readAt"):
-            _mark(n, sub, readAt=store.now())
+    marks.mark_read(_find(notificationId, claims), claims.get("sub"))
     return Response(status_code=204)
 
 
 @router.post("/notifications/{notificationId}/unread", status_code=204)
 def mark_unread(notificationId: str, claims: dict = _perm("POST", "/notifications/{notificationId}/unread")):
     """README 7.4: remove `read_at` for the caller; idempotent."""
-    n = _find(notificationId, claims)
-    with store.LOCK:
-        _mark(n, claims.get("sub"), readAt=None)
+    marks.mark_unread(_find(notificationId, claims), claims.get("sub"))
     return Response(status_code=204)
 
 
 @router.post("/notifications/{notificationId}/hide", status_code=204)
 def hide_notification(notificationId: str, claims: dict = _perm("POST", "/notifications/{notificationId}/hide")):
     """README 7.5: hide for the caller; an open task gives 409 `task-open`; idempotent."""
-    n = _find(notificationId, claims)
-    sub = claims.get("sub")
-    with store.LOCK:
-        if n["topic"] == "ACTION" and n["done"] is False:
-            raise Problem(MODULE, 409, "task-open")
-        if not _state(n, sub).get("hiddenAt"):
-            _mark(n, sub, hiddenAt=store.now())
+    marks.hide(_find(notificationId, claims), claims.get("sub"))
     return Response(status_code=204)
