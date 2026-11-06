@@ -450,3 +450,30 @@ def test_delete_asks_c10_m1_outside_the_lock(api, monkeypatch):
     release.set()
     t.join()
     assert acquired and out["delete"].status_code == 204 and interface.connectors[con]["status"] == "INACTIVE"
+
+
+def test_no_link_to_a_technical_user_after_step_8_2(api):
+    step = {"processId": PROCESS, "stepRunId": RUN_1, "technicalUserId": TU}   # deleted in C2-M3, no connector yet
+    assert api.post(f"{BASE_PATH}/steps/unlink-technical-user", headers=svc("c12-m1"), json=step).json()["result"] == {
+        "connectorIds": []}
+    assert problem(register(api, technicalUserId=TU), 409, "technical-user-not-usable")
+    assert problem(register(api, technicalUserId=TU.upper()), 409, "technical-user-not-usable")
+    assert not interface.connectors
+
+
+def test_uuid_casing_does_not_matter(api):
+    con = register(api, technicalUserId=TU.upper()).json()
+    assert con["technicalUserId"] == TU
+    assert problem(register(api, name="second", technicalUserId=TU), 409, "technical-user-not-usable")
+    url = f"{BASE_PATH}/internal/connectors"
+    assert api.get(url, params={"technicalUserId": TU.upper()}, headers=svc("c2-m3")).json() == [
+        {"connectorId": con["connectorId"], "status": "ACTIVE"}]
+    assert api.get(f"{BASE_PATH}/connectors/{con['connectorId'].upper()}", headers=h("erika")).status_code == 200
+    step = {"processId": PROCESS, "stepRunId": RUN_1, "technicalUserId": TU.upper()}
+    r = api.post(f"{BASE_PATH}/steps/unlink-technical-user", headers=svc("c12-m1"), json=step)
+    assert r.json()["result"] == {"connectorIds": [con["connectorId"]]}
+
+
+def test_subscription_id_casing_does_not_matter(api):
+    assert register_caas(api, offerSubscriptionId=SUB.upper()).json()["offerSubscriptionId"] == SUB
+    assert problem(register_caas(api, name="b", endpoint="https://b.example/dsp"), 409, "subscription-linked")
