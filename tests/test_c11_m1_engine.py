@@ -24,6 +24,8 @@
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
 """C11-M1 event handling (README 6.2, 6.4, acceptance 13.1 to 13.4 and 13.6) through `router.on_event`."""
+import threading
+
 import pytest
 
 from modules.c11_m1 import recipients, store, worker
@@ -33,8 +35,11 @@ from portal_common import events, tokens
 APPLICATION = "0f8e2d4c-6b1a-4c3e-8f7d-2a9b1c0d3e4f"   # FRAMEWORK 7a
 COMPANY = "c0000001-0000-4000-8000-000000000001"     # FRAMEWORK 7a, Beispiel Maschinenbau GmbH
 APPLICANT = "5a1c0001-0000-4000-8000-000000000001"   # README 14: the `sub` of Erika; C11-M1 never sees names
-PROCESS = "22222222-2222-4222-8222-222222222222"
+PROCESS = "77777777-7777-4777-8777-777777777777"          # IDs below: not in FRAMEWORK 7a
+TECHNICAL_USER = "88888888-8888-4888-8888-888888888888"
 OFFER = "33333333-3333-4333-8333-333333333333"
+SUBSCRIPTION = "55555555-5555-4555-8555-555555555555"
+CONNECTOR = "66666666-6666-4666-8666-666666666666"
 
 
 @pytest.fixture(autouse=True)
@@ -118,7 +123,7 @@ def test_disabled_rules_are_skipped(monkeypatch):
     jobs = []
     monkeypatch.setattr(worker, "submit", lambda job, *, label: jobs.append(label))
     c11.on_event(submitted())
-    c11.on_event(ev("c4-m2", "WalletAccountCreated", companyId=COMPANY, technicalUserId=PROCESS))
+    c11.on_event(ev("c4-m2", "WalletAccountCreated", companyId=COMPANY, technicalUserId=TECHNICAL_USER))
     assert [n["type"] for n in c11.notifications] == ["APPLICATION_SUBMITTED"] and jobs == []
 
 
@@ -132,3 +137,55 @@ def test_company_role_rule_gives_one_personal_notification_per_person(monkeypatc
     c11.on_event(ev("c8-m1", "OfferApproved", offerId=OFFER, providerCompanyId=COMPANY))
     assert asked == [("company_role:providerCompanyId:Company Admin", COMPANY)]
     assert sorted(n["receiverSub"] for n in of_type("OFFER_APPROVED")) == ["admin-1", "admin-2"]
+
+
+# ---- the real worker thread (README 4); the tests above run it in sync mode
+
+def blocking_resolve(monkeypatch) -> tuple[threading.Event, threading.Event]:
+    """Recipient queries wait for `go`, like a slow neighbour; `started` says one is in flight."""
+    started, go = threading.Event(), threading.Event()
+
+    def resolve(kind, data):
+        started.set()
+        go.wait(5)
+        return [APPLICANT]
+    monkeypatch.setattr(recipients, "resolve", resolve)
+    worker.set_sync(False)
+    return started, go
+
+
+def subscription(etype: str, time: str) -> dict:
+    return ev("c10-m1", etype, time, offerSubscriptionId=SUBSCRIPTION, offerId=OFFER,
+              providerCompanyId=COMPANY, customerCompanyId=COMPANY)
+
+
+def test_closer_during_a_pending_delivery_creates_the_task_done(monkeypatch):
+    started, go = blocking_resolve(monkeypatch)
+    stored, add = threading.Event(), store.add_notification
+
+    def add_and_signal(event, rule, **receiver):
+        n = add(event, rule, **receiver)
+        if rule.id == "R9":
+            stored.set()
+        return n
+    monkeypatch.setattr(store, "add_notification", add_and_signal)
+    c11.on_event(subscription("SubscriptionRequested", "2026-11-06T09:30:00Z"))
+    assert started.wait(2)   # the recipient query of R9 is in flight in the worker thread
+    c11.on_event(subscription("SubscriptionActivated", "2026-11-06T09:31:00Z"))
+    go.set()
+    assert stored.wait(2)
+    assert of_type("SUBSCRIPTION_REQUESTED")[0]["done"] is True   # README 6.2: the remembered closer
+
+
+def test_reset_stops_the_worker_before_clearing_the_inbox(monkeypatch):
+    started, go = blocking_resolve(monkeypatch)
+    stop_worker = worker.reset
+
+    def answer_then_stop():
+        go.set()   # the neighbour answers while the worker is being stopped
+        stop_worker()
+    monkeypatch.setattr(worker, "reset", answer_then_stop)
+    c11.on_event(ev("c6-m1", "ConnectorRegistered", connectorId=CONNECTOR, companyId=COMPANY))
+    assert started.wait(2)
+    c11.reset()
+    assert c11.notifications == []

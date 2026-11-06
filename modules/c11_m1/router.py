@@ -40,10 +40,11 @@ __all__ = ["router", "reset", "on_event", "notifications"]
 
 
 def reset() -> None:
-    """Fresh state for tests and `/scaffold/reset`."""
+    """Fresh state for tests and `/scaffold/reset`. The worker stops first, so a job that is still
+    running cannot write into the cleared inbox."""
+    worker.reset()
     store.reset()
     closing.reset()
-    worker.reset()
 
 
 def on_event(event: dict) -> None:
