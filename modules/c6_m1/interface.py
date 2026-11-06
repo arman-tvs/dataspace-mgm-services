@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import threading
+import uuid
 from pathlib import Path
 
 from portal_common import events, standin
@@ -42,6 +44,10 @@ HERE = Path(__file__).resolve().parent
 
 ACTIVE, INACTIVE = "ACTIVE", "INACTIVE"
 COMPANY_CONNECTOR, CONNECTOR_AS_A_SERVICE = "COMPANY_CONNECTOR", "CONNECTOR_AS_A_SERVICE"
+
+# One lock for every change of the register: the uniqueness checks of README 5 and the change that
+# follows them run as one unit, so that of two concurrent requests the second sees the first (409).
+LOCK = threading.RLock()
 
 connectors: dict[str, dict] = {}     # connectorId -> row of table `connector` (README 5)
 audit: list[dict] = []               # table `audit_entry` (FRAMEWORK 4.3)
@@ -55,13 +61,14 @@ def _load(name: str) -> dict:
 
 
 def reset() -> None:
-    connectors.clear()
-    audit.clear()
-    stub_companies.clear()
-    stub_companies.update(_load("stub-companies.json").get("companies", {}))
-    stub_subscriptions.clear()
-    stub_subscriptions.update({s["offerSubscriptionId"]: s
-                               for s in _load("stub-subscriptions.json").get("subscriptions", [])})
+    with LOCK:
+        connectors.clear()
+        audit.clear()
+        stub_companies.clear()
+        stub_companies.update(_load("stub-companies.json").get("companies", {}))
+        stub_subscriptions.clear()
+        stub_subscriptions.update({s["offerSubscriptionId"]: s
+                                   for s in _load("stub-subscriptions.json").get("subscriptions", [])})
 
 
 def now() -> str:
@@ -86,37 +93,59 @@ def publish_deactivated(c: dict) -> None:
     events.publish(MODULE, "ConnectorDeactivated", {"connectorId": c["id"], "companyId": c["host_company_id"]})
 
 
-def _require(input: dict, field: str) -> str:
-    value = input.get(field)
-    if not value:
-        raise Problem(MODULE, 400, "validation", detail=f"{field} is required", retryable=False)
-    return value
+def is_uuid(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _step_input(input: dict, key: str) -> str:
+    """StepInput of openapi.yaml: `processId`, `stepRunId` and the business key, all UUIDs.
+    Checked before anything changes (README 8, FRAMEWORK 4.4)."""
+    if not isinstance(input, dict):
+        raise Problem(MODULE, 400, "validation", detail="JSON object required", retryable=False)
+    errors = [{"field": f, "message": "UUID required"} for f in ("processId", "stepRunId", key)
+              if not is_uuid(input.get(f))]
+    if errors:
+        raise Problem(MODULE, 400, "validation", errors=errors, retryable=False)
+    return input[key]
 
 
 # ---------------------------------------------------------------- steps (README 8)
 def deactivate_subscription_connectors(input: dict) -> dict:
     """8.1: the connector of an ended or declined subscription becomes INACTIVE, without technical user.
-    Repeatable: a second call finds nothing left to change and answers DONE with an empty list."""
-    sub_id = _require(input, "offerSubscriptionId")
+    Also clears a link that an INACTIVE connector still holds (deleted while the subscription was
+    PENDING, README 7.6). `ConnectorDeactivated` only for a real change of status, so a repetition
+    publishes nothing and answers DONE with an empty list."""
+    sub_id = _step_input(input, "offerSubscriptionId")
     changed = []
-    for c in connectors.values():
-        if c["offer_subscription_id"] == sub_id and c["status"] == ACTIVE:
+    with LOCK:
+        for c in connectors.values():
+            if c["offer_subscription_id"] != sub_id or (c["status"] == INACTIVE and c["technical_user_id"] is None):
+                continue
+            was_active = c["status"] == ACTIVE
             c.update(status=INACTIVE, technical_user_id=None, changed_at=now())
             write_audit("deactivate-subscription-connectors", c["id"])
-            publish_deactivated(c)
+            if was_active:
+                publish_deactivated(c)
             changed.append(c["id"])
     return standin.step_reply(input, {"connectorIds": changed})
 
 
 def unlink_technical_user(input: dict) -> dict:
     """8.2: removes the deleted technical user from the connector that uses it; the connector keeps its status."""
-    tu_id = _require(input, "technicalUserId")
+    tu_id = _step_input(input, "technicalUserId")
     changed = []
-    for c in connectors.values():
-        if c["technical_user_id"] == tu_id:
-            c.update(technical_user_id=None, changed_at=now())
-            write_audit("unlink-technical-user", c["id"])
-            changed.append(c["id"])
+    with LOCK:
+        for c in connectors.values():
+            if c["technical_user_id"] == tu_id:
+                c.update(technical_user_id=None, changed_at=now())
+                write_audit("unlink-technical-user", c["id"])
+                changed.append(c["id"])
     return standin.step_reply(input, {"connectorIds": changed})
 
 
@@ -125,8 +154,9 @@ def list_connectors_internal(*, technicalUserId: str | None = None, **_other) ->
     """9.1: the ACTIVE connectors that use this technical user, as `ConnectorRef`."""
     if not technicalUserId:
         raise Problem(MODULE, 400, "validation", detail="technicalUserId is required")
-    return [{"connectorId": c["id"], "status": c["status"]} for c in connectors.values()
-            if c["technical_user_id"] == technicalUserId and c["status"] == ACTIVE]
+    with LOCK:
+        return [{"connectorId": c["id"], "status": c["status"]} for c in connectors.values()
+                if c["technical_user_id"] == technicalUserId and c["status"] == ACTIVE]
 
 
 reset()

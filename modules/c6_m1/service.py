@@ -39,6 +39,7 @@ from .interface import (
     COMPANY_CONNECTOR,
     CONNECTOR_AS_A_SERVICE,
     INACTIVE,
+    LOCK,
     MODULE,
     connectors,
     now,
@@ -91,8 +92,11 @@ def _check_input(name, endpoint, location, technical_user_id=None) -> None:
     if not isinstance(name, str) or not name or len(name) > 255:
         errors.append({"field": "name", "message": "1 to 255 characters"})
     endpoint = endpoint if isinstance(endpoint, str) else ""
-    url = urlparse(endpoint)
-    if url.scheme != "https" or not url.netloc or len(endpoint) > 2000:
+    try:
+        url = urlparse(endpoint)
+    except ValueError:
+        url = None
+    if url is None or url.scheme != "https" or not url.netloc or len(endpoint) > 2000:
         errors.append({"field": "endpoint", "message": "HTTPS URL"})
     countries = _known_countries()
     if technical_user_id is not None and not _is_uuid(technical_user_id):
@@ -148,6 +152,19 @@ def _visible(connector_id: str, company_id: str) -> dict:
 
 # ---------------------------------------------------------------- operations (README 7)
 def _register(*, name, endpoint, location, technical_user_id, ctype, provider, host, sub_id, sub) -> dict:
+    """The final uniqueness checks of README 5 and the insert as one unit under LOCK: of two concurrent
+    requests that both passed the earlier checks, the second gets 409."""
+    with LOCK:
+        if sub_id and any(c["offer_subscription_id"] == sub_id for c in _live()):
+            raise Problem(MODULE, 409, "subscription-linked")
+        _check_duplicate(name, endpoint)
+        if technical_user_id and any(c["technical_user_id"] == technical_user_id for c in _live()):
+            raise Problem(MODULE, 409, "technical-user-not-usable")
+        return _insert(name=name, endpoint=endpoint, location=location, technical_user_id=technical_user_id,
+                       ctype=ctype, provider=provider, host=host, sub_id=sub_id, sub=sub)
+
+
+def _insert(*, name, endpoint, location, technical_user_id, ctype, provider, host, sub_id, sub) -> dict:
     c = {"id": str(uuid.uuid4()), "name": name, "endpoint": endpoint, "location": location, "type": ctype,
          "status": ACTIVE, "provider_company_id": provider, "host_company_id": host,
          "technical_user_id": technical_user_id, "offer_subscription_id": sub_id,
@@ -220,6 +237,12 @@ def get_connector(company_id: str | None, connector_id: str) -> dict:
 
 
 def change_endpoint(company_id: str | None, sub: str | None, connector_id: str, body: dict) -> dict:
+    """7.5 under LOCK, so that its duplicate check and change do not interleave with other changes."""
+    with LOCK:
+        return _change_endpoint(company_id, sub, connector_id, body)
+
+
+def _change_endpoint(company_id: str | None, sub: str | None, connector_id: str, body: dict) -> dict:
     """7.5: only the provider company; same value = 200 without change."""
     own = _own_company(company_id)
     c = _visible(connector_id, own)
@@ -240,6 +263,12 @@ def change_endpoint(company_id: str | None, sub: str | None, connector_id: str, 
 
 
 def delete_connector(company_id: str | None, sub: str | None, connector_id: str) -> None:
+    """7.6 under LOCK, so that it does not interleave with other changes of the connector."""
+    with LOCK:
+        _delete_connector(company_id, sub, connector_id)
+
+
+def _delete_connector(company_id: str | None, sub: str | None, connector_id: str) -> None:
     """7.6: with a linked subscription the connector becomes INACTIVE and keeps the link; otherwise removed."""
     own = _own_company(company_id)
     c = _visible(connector_id, own)
