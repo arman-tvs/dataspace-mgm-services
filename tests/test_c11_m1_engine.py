@@ -1,0 +1,133 @@
+#################################################################################
+#  Copyright (c) 2026 Contributors to the Eclipse Foundation
+#
+#  See the NOTICE file(s) distributed with this work for additional
+#  information regarding copyright ownership.
+#
+#  This program and the accompanying materials are made available under the
+#  terms of the Apache License, Version 2.0 which is available at
+#  https://www.apache.org/licenses/LICENSE-2.0.
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#  License for the specific language governing permissions and limitations
+#  under the License.
+#
+#  AI Disclosure: This file was entirely AI-generated.
+#  The AI-generated portions are made available under CC0-1.0 and not subject
+#  to the project's license. The human contributor has reviewed and verified
+#  that the code is correct.
+#
+#  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
+#  Assisted-By: Claude Code (claude-opus-5-5)
+#################################################################################
+"""C11-M1 event handling (README 6.2, 6.4, acceptance 13.1 to 13.4 and 13.6) through `router.on_event`."""
+import pytest
+
+from modules.c11_m1 import recipients, store, worker
+from modules.c11_m1 import router as c11
+from portal_common import events, tokens
+
+APPLICATION = "0f8e2d4c-6b1a-4c3e-8f7d-2a9b1c0d3e4f"   # FRAMEWORK 7a
+COMPANY = "c0000001-0000-4000-8000-000000000001"     # FRAMEWORK 7a, Beispiel Maschinenbau GmbH
+APPLICANT = "11111111-1111-4111-8111-111111111111"   # a `sub`; C11-M1 never sees names
+PROCESS = "22222222-2222-4222-8222-222222222222"
+OFFER = "33333333-3333-4333-8333-333333333333"
+
+
+@pytest.fixture(autouse=True)
+def _fresh(monkeypatch):
+    """conftest does not reset module state, so every test starts from an empty inbox."""
+    monkeypatch.delenv("DISABLED_RULES", raising=False)
+    c11.reset()
+    worker.set_sync(True)
+    yield
+    c11.reset()
+
+
+def ev(module: str, etype: str, time: str = "2026-11-06T09:30:00Z", **data) -> dict:
+    return events.cloudevent(module, etype, data, time=time)
+
+
+def submitted() -> dict:
+    return ev("c1-m2", "ApplicationSubmitted", applicationId=APPLICATION, companyId=COMPANY, kind="ONBOARDING",
+              existingCompany=False, applicantSub=APPLICANT)
+
+
+def of_type(ntype: str) -> list[dict]:
+    return [n for n in c11.notifications if n["type"] == ntype]
+
+
+def claims(sub: str, *perms: str) -> dict:
+    return {"sub": sub, "resource_access": {tokens.AUDIENCE: {"roles": list(perms)}}}
+
+
+def test_submitted_informs_applicant_and_opens_review_task():
+    c11.on_event(submitted())
+    [info] = of_type("APPLICATION_SUBMITTED")
+    assert (info["receiverSub"], info["topic"], info["done"], info["forStaff"]) == (APPLICANT, "INFO", None, False)
+    assert (info["subjectType"], info["subjectId"], info["companyId"]) == ("APPLICATION", APPLICATION, COMPANY)
+    assert info["content"]["applicationId"] == APPLICATION
+    [task] = of_type("REVIEW_CASE_OPENED")
+    assert (task["receiverPermission"], task["topic"], task["done"], task["forStaff"]) == \
+        ("review_application", "ACTION", False, True)
+    reviewer, other = claims("rolf", "review_application"), claims("otto", "retrigger_process_steps")
+    assert store.visible_to(task, reviewer) and not store.visible_to(task, other)   # acceptance 1
+    assert not store.visible_to(info, reviewer)
+
+
+def test_same_event_id_twice_creates_no_second_notification():
+    event = submitted()
+    c11.on_event(event)
+    c11.on_event(event)   # at-least-once delivery (README 4, 6.4)
+    assert len(c11.notifications) == 2
+
+
+def test_approval_closes_the_review_task_for_everyone():
+    c11.on_event(submitted())
+    c11.on_event(ev("c1-m3", "ApplicationApproved", applicationId=APPLICATION, companyId=COMPANY))
+    [task] = of_type("REVIEW_CASE_OPENED")
+    assert task["done"] is True and task["doneAt"]
+
+
+def test_declined_informs_applicant_with_reason_and_forgets_the_applicant():
+    c11.on_event(submitted())
+    c11.on_event(ev("c1-m3", "ApplicationDeclined", applicationId=APPLICATION, companyId=COMPANY, reason="incomplete"))
+    [info] = of_type("APPLICATION_DECLINED")
+    assert info["receiverSub"] == APPLICANT and info["content"]["reason"] == "incomplete"
+    assert of_type("REVIEW_CASE_OPENED")[0]["done"] is True
+    assert APPLICATION not in store.applicants   # README 5, table `applicant`
+
+
+def test_step_task_closed_by_retrigger_and_reopened_by_a_new_failure():
+    def failed(time):
+        return ev("c12-m1", "ProcessStepFailed", time, processId=PROCESS, flowKey="onboarding",
+                  subjectType="APPLICATION", subjectId=APPLICATION, stepKey="register-company", errorType="x",
+                  retryable=False)
+    c11.on_event(failed("2026-11-06T09:30:00Z"))
+    c11.on_event(ev("c12-m1", "ProcessStepRetriggered", "2026-11-06T09:31:00Z", processId=PROCESS,
+                    stepKey="register-company", retriggeredBy="x"))
+    c11.on_event(failed("2026-11-06T09:32:00Z"))   # acceptance 6
+    assert [n["done"] for n in of_type("PROCESS_STEP_FAILED")] == [True, False]
+
+
+def test_disabled_rules_are_skipped(monkeypatch):
+    monkeypatch.setenv("DISABLED_RULES", "r14, R2")
+    jobs = []
+    monkeypatch.setattr(worker, "submit", lambda job, *, label: jobs.append(label))
+    c11.on_event(submitted())
+    c11.on_event(ev("c4-m2", "WalletAccountCreated", companyId=COMPANY, technicalUserId=PROCESS))
+    assert [n["type"] for n in c11.notifications] == ["APPLICATION_SUBMITTED"] and jobs == []
+
+
+def test_company_role_rule_gives_one_personal_notification_per_person(monkeypatch):
+    asked = []
+
+    def resolve(kind, data):
+        asked.append((kind, data["providerCompanyId"]))
+        return ["admin-1", "admin-2", "admin-1"]
+    monkeypatch.setattr(recipients, "resolve", resolve)
+    c11.on_event(ev("c8-m1", "OfferApproved", offerId=OFFER, providerCompanyId=COMPANY))
+    assert asked == [("company_role:providerCompanyId:Company Admin", COMPANY)]
+    assert sorted(n["receiverSub"] for n in of_type("OFFER_APPROVED")) == ["admin-1", "admin-2"]
