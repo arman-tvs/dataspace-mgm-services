@@ -111,6 +111,13 @@ def test_a_view_is_the_notification_schema_with_read_for_the_caller():
     assert (v["read"], v["subjectId"], v["companyId"]) == (True, APPLICATION, COMPANY)
 
 
+def test_a_view_does_not_share_its_content_with_the_store():
+    c11.on_event(submitted())
+    [v] = inbox.own(applicant())
+    v["content"]["applicationId"] = "changed by a caller"
+    assert of_type("APPLICATION_SUBMITTED")["content"]["applicationId"] == APPLICATION
+
+
 def test_hidden_notifications_are_left_out_of_the_own_inbox():
     c11.on_event(submitted())
     n = of_type("APPLICATION_SUBMITTED")

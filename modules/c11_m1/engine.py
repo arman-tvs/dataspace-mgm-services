@@ -50,42 +50,63 @@ def disabled_rules() -> set[str]:
 
 
 def handle(event: dict) -> None:
-    """Process one CloudEvent of the relay (FRAMEWORK 6) once per `id` (README 6.4)."""
+    """Process one CloudEvent of the relay (FRAMEWORK 6) once per `source` and `id` (README 6.4;
+    CloudEvents identifies an event by both, so two modules may use the same `id`)."""
     event_id, event_type = event.get("id"), event.get("type")
     if not event_id or not event_type:
         log.warning("event without id or type ignored")
         return
-    with store.LOCK:
-        if event_id in store.processed:
-            return
-        store.processed[event_id] = {"type": event_type, "receivedAt": store.now(), "status": "DONE"}
+    if not store.first_seen(event):
+        return
     data = event.get("data") or {}
 
-    closing.handle(event)
+    # The event is already marked processed, so no step may raise past this point: a failing part
+    # is logged and marks the event FAILED, and the other parts still run.
+    _guarded(event, "closing", lambda: closing.handle(event))
+    _guarded(event, "applicant", lambda: _remember_applicant(event_type, data))
+
+    off = disabled_rules()
+    for rule in rules.for_event(event_type):
+        if rule.id not in off:
+            _guarded(event, f"rule {rule.id}", lambda rule=rule: _apply(rule, event))
+    _guarded(event, "applicant", lambda: _forget_applicant(event_type, data))
+
+
+def _guarded(event: dict, part: str, run) -> None:
+    """Run one part of the event handling; on an error log it and mark the event FAILED (README 6.4)."""
+    try:
+        run()
+    except Exception:   # one broken part must not stop the others of the same event
+        log.exception("%s failed for event %s", part, event.get("id"))
+        store.mark_failed(event)
+
+
+def _remember_applicant(event_type: str, data: dict) -> None:
+    """README 5 table `applicant`: the `sub` of the person who submitted the application."""
     if event_type == "ApplicationSubmitted" and data.get("applicationId") and data.get("applicantSub"):
         with store.LOCK:
             store.applicants[data["applicationId"]] = data["applicantSub"]
 
-    off = disabled_rules()
-    for rule in rules.for_event(event_type):
-        if rule.id in off:
-            continue
-        try:
-            _apply(rule, event)
-        except Exception:   # one broken rule must not stop the others of the same event
-            log.exception("rule %s failed for event %s", rule.id, event_id)
-            with store.LOCK:
-                store.processed[event_id]["status"] = "FAILED"
 
+def _forget_applicant(event_type: str, data: dict) -> None:
+    """README 5 table `applicant`: the row goes when the application has ended."""
     if event_type in _APPLICATION_ENDED:
         with store.LOCK:
             store.applicants.pop(data.get("applicationId"), None)
 
 
+def _applicant(data: dict) -> str | None:
+    """README 6.1 "applicant": from the table `applicant`, else `applicantSub` of the event."""
+    application_id = data.get("applicationId")
+    with store.LOCK:
+        known = store.applicants.get(application_id) if isinstance(application_id, str) else None
+    return known or data.get("applicantSub")
+
+
 def _apply(rule: Rule, event: dict) -> None:
     data = event.get("data") or {}
     if rule.recipients == "applicant":
-        sub = store.applicants.get(data.get("applicationId")) or data.get("applicantSub")
+        sub = _applicant(data)
         if not sub:
             log.info("rule %s: no applicant known for event %s", rule.id, event["id"])
             return

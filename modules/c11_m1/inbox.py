@@ -32,16 +32,17 @@ the token; hidden ones are left out. Notifications are shown as the schema `Noti
 from __future__ import annotations
 
 from modules.c11_m1 import marks, store
+from modules.c11_m1.interface import MODULE
 from portal_common.problems import Problem
 
-MODULE = "c11-m1"
 FIELDS = ("notificationId", "type", "topic", "companyId", "subjectType", "subjectId", "content", "forStaff",
           "done", "createdAt", "doneAt")   # openapi `Notification`, apart from `read`, which is per person
 
 
 def view(n: dict, sub: str | None) -> dict:
     """Schema `Notification` with `read` for the calling person (README 7.3)."""
-    return {f: n[f] for f in FIELDS} | {"read": marks.is_read(n, sub)}
+    # `content` is copied: a view leaves the lock, and a caller that changes it must not change the inbox.
+    return {f: n[f] for f in FIELDS} | {"content": dict(n["content"]), "read": marks.is_read(n, sub)}
 
 
 def own(claims: dict) -> list[dict]:

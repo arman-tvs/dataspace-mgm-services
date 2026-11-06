@@ -48,12 +48,12 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from modules.c11_m1 import store
+from modules.c11_m1.interface import MODULE
 from portal_common import neighbours
 from portal_common.problems import Problem
 
 log = logging.getLogger("portal.c11-m1")
 
-MODULE = "c11-m1"
 COMPANY_ADMIN = "Company Admin"
 IT_ADMIN = "IT Admin"
 STUB_COMPANY_USERS = Path(__file__).with_name("stub-company-users.json")   # README 11.2, 14

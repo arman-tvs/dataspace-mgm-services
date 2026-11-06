@@ -45,13 +45,44 @@ LOCK = threading.RLock()
 notifications: list[dict] = []           # README 5 `notification`; items carry `sourceEventId` (tests/test_sse.py)
 state: dict[tuple[str, str], dict] = {}  # README 5 `notification_state`: (notificationId, sub) -> {readAt, hiddenAt}
 applicants: dict[str, str] = {}          # README 5 `applicant`: applicationId -> applicantSub
-processed: dict[str, dict] = {}          # README 5 `processed_event`: event id -> {type, receivedAt, status}
-_dedup: set[tuple[str, str, str]] = set()  # README 5 `dedup_key`: (rule, event id, receiver)
+SEEN_MAX = 10_000   # events and dedup keys remembered, oldest dropped first (as RECEIVED_MAX of portal_common.events)
+processed: dict[tuple[str, str], dict] = {}   # README 5 `processed_event`: (source, id) -> {type, receivedAt, status}
+_dedup: dict[tuple[str, str, str, str], None] = {}   # README 5 `dedup_key`: (rule, source, event id, receiver)
 BROKER = sse.Broker()                    # README 7.6 stream events of the own inbox
 
 
 class Unavailable(Exception):
     """A neighbour (C2-M2, C10-M1) is not reachable; the worker retries the job (README 4)."""
+
+
+def event_key(event: dict) -> tuple[str, str]:
+    """The identity of a CloudEvent: `source` and `id` together (FRAMEWORK 6)."""
+    return str(event.get("source")), str(event.get("id"))
+
+
+def first_seen(event: dict) -> bool:
+    """README 6.4: record the event as processed; False if it was processed before (at-least-once delivery)."""
+    key = event_key(event)
+    with LOCK:
+        if key in processed:
+            return False
+        _remember(processed, key, {"type": event.get("type"), "receivedAt": now(), "status": "DONE"})
+    return True
+
+
+def mark_failed(event: dict) -> None:
+    """README 5 `processed_event.status`: a part of the event handling failed."""
+    with LOCK:
+        row = processed.get(event_key(event))
+        if row is not None:
+            row["status"] = "FAILED"
+
+
+def _remember(seen: dict, key: tuple, value: object) -> None:
+    """Add `key`, dropping the oldest entries above `SEEN_MAX` (memory stays bounded); the caller holds `LOCK`."""
+    seen[key] = value
+    while len(seen) > SEEN_MAX:
+        del seen[next(iter(seen))]
 
 
 def now() -> str:
@@ -70,13 +101,13 @@ def add_notification(event: dict, rule: Rule, *, receiver_sub: str | None = None
         raise ValueError("give exactly one of receiver_sub and receiver_permission")
     data = event.get("data") or {}
     receiver = receiver_sub if receiver_sub is not None else f"permission:{receiver_permission}"
-    key = (rule.id, str(event.get("id")), receiver)
+    key = (rule.id, *event_key(event), receiver)
     is_task = rule.topic == "ACTION"
-    created = now()
     with LOCK:
         if key in _dedup:
             return None
-        _dedup.add(key)
+        _remember(_dedup, key, None)
+        created = now()   # under the lock, so `notifications` stays in `createdAt` order across threads
         n = {
             "notificationId": str(uuid.uuid4()), "sourceEventId": event.get("id"), "rule": rule.id,
             "type": rule.ntype, "topic": rule.topic,

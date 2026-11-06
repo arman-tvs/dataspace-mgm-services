@@ -34,9 +34,9 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from modules.c11_m1 import inbox, listing, marks, store
+from modules.c11_m1.interface import MODULE
 from portal_common import problems, spec, sse, tokens
 
-MODULE = "c11-m1"
 router = APIRouter(prefix=spec.module(MODULE).base_path, route_class=problems.route_class(MODULE), tags=[MODULE])
 
 
