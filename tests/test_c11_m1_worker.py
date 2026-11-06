@@ -23,19 +23,19 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""C11-M1 delivery worker (README 4): retries on `store.Unavailable`, give-up, sync mode and reset."""
+"""C11-M1 retry policy and delivery worker (README 4): retries on `store.Unavailable`, give-up, sync mode and reset."""
 import logging
 import threading
 
 import pytest
 
-from modules.c11_m1 import store, worker
+from modules.c11_m1 import retry, store, worker
 
 
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch):
     """conftest does not reset module state; waits are zero so the background tests need no sleeps."""
-    monkeypatch.setattr(worker, "FIRST_WAIT", 0.0)
+    monkeypatch.setattr(retry, "FIRST_WAIT", 0.0)
     worker.reset()
     yield
     worker.reset()
@@ -55,8 +55,8 @@ def flaky(failures: int, done: threading.Event | None = None):
 
 
 def test_waits_double_from_five_seconds_up_to_ten_minutes(monkeypatch):
-    monkeypatch.setattr(worker, "FIRST_WAIT", 5.0)
-    assert [worker.wait_before(a) for a in range(1, 10)] == [5, 10, 20, 40, 80, 160, 320, 600, 600]
+    monkeypatch.setattr(retry, "FIRST_WAIT", 5.0)
+    assert [retry.wait_before(a) for a in range(1, 10)] == [5, 10, 20, 40, 80, 160, 320, 600, 600]
 
 
 def test_sync_runs_in_the_calling_thread_and_retries():
@@ -71,7 +71,7 @@ def test_gives_up_after_the_last_attempt(caplog):
     job, calls = flaky(99)
     with caplog.at_level(logging.WARNING, logger="portal.c11-m1"):
         worker.submit(job, label="R16/e1")
-    assert len(calls) == worker.MAX_ATTEMPTS
+    assert len(calls) == retry.MAX_ATTEMPTS
     assert [r.getMessage() for r in caplog.records] == ["not delivered: R16/e1 after 10 attempts"]
 
 
@@ -96,7 +96,7 @@ def test_background_thread_retries_until_success():
 
 
 def test_reset_drops_waiting_jobs_and_sync_mode(monkeypatch):
-    monkeypatch.setattr(worker, "FIRST_WAIT", 600.0)
+    monkeypatch.setattr(retry, "FIRST_WAIT", 600.0)
     job, calls = flaky(5)
     first_try = threading.Event()
     worker.submit(lambda: (first_try.set(), job()), label="R16/e1")
