@@ -93,6 +93,12 @@ def reset() -> None:
         thread.join(timeout=5)
 
 
+def pending() -> int:
+    """The number of jobs waiting in the queue, not counting one that is running (tests, diagnostics)."""
+    with _cond:
+        return len(_jobs)
+
+
 def _ensure_thread() -> None:
     """Start the worker thread on first use; the caller holds `_cond`."""
     global _thread
@@ -110,16 +116,20 @@ def _loop(stop: threading.Event) -> None:
             if stop.is_set():
                 return
             job = heapq.heappop(_jobs)
-        if retry.attempt(job.run, job.label, job.attempt):
-            continue
-        with _cond:
-            if not stop.is_set():
-                heapq.heappush(_jobs, _Job(time.monotonic() + retry.wait_before(job.attempt), next(_seq),
-                                           job.run, job.label, job.attempt + 1))
+        if retry.needs_another(job.run, job.label, job.attempt):
+            _schedule_retry(job, stop)
+
+
+def _schedule_retry(job: _Job, stop: threading.Event) -> None:
+    """Put `job` back for its next attempt after the wait of `retry`, unless the worker was stopped."""
+    with _cond:
+        if not stop.is_set():
+            heapq.heappush(_jobs, _Job(time.monotonic() + retry.wait_before(job.attempt), next(_seq),
+                                       job.run, job.label, job.attempt + 1))
 
 
 def _run_now(job: Callable[[], None], label: str) -> None:
     """Sync mode: all attempts at once in the calling thread."""
     attempt = 1
-    while not retry.attempt(job, label, attempt):
+    while retry.needs_another(job, label, attempt):
         attempt += 1

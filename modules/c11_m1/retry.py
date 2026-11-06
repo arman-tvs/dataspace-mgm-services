@@ -49,16 +49,17 @@ def wait_before(attempt: int) -> float:
     return min(FIRST_WAIT * 2 ** (attempt - 1), MAX_WAIT)
 
 
-def attempt(job: Callable[[], None], label: str, number: int) -> bool:
-    """Run attempt `number` of `job`; `True` when the job is finished (delivered, failed, or given up)."""
+def needs_another(job: Callable[[], None], label: str, number: int) -> bool:
+    """Run attempt `number` of `job`; `True` if it must be tried again, `False` when it is finished
+    (delivered, failed, or given up)."""
     try:
         job()
     except store.Unavailable:
         if number >= MAX_ATTEMPTS:
             log.warning("not delivered: %s after %d attempts", label, number)
-            return True
+            return False
         log.info("job %s attempt %d: neighbour unavailable, will retry", label, number)
-        return False
+        return True
     except Exception:   # a broken job must not stop the worker thread; logged with its traceback
         log.exception("job %s failed", label)
-    return True
+    return False
