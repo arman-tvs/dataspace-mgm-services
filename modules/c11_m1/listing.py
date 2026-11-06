@@ -44,6 +44,7 @@ class Filters:
     created_since: dt.datetime | None = None
 
     def matches(self, v: dict) -> bool:
+        """True if the view `v` passes every filter that is set."""
         return ((self.topic is None or v["topic"] == self.topic)
                 and (self.ntype is None or v["type"] == self.ntype)
                 and (self.read is None or v["read"] == self.read)
