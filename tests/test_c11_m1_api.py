@@ -23,7 +23,7 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""C11-M1 inbox (README 7.1 to 7.5; acceptance 13.8 to 13.10), one section per file: listing.py
+"""C11-M1 inbox (README 7.1 to 7.5; acceptance 13.8 to 13.10), one section per file: listing.py, marks.py
 and the HTTP layer of api.py. The stream of 7.6 (cases 13.13 to 13.16) runs over a real HTTP server
 in `test_sse.py`."""
 import datetime as dt
@@ -34,10 +34,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from conftest import BASE, bearer, person_token
-from modules.c11_m1 import listing, store, worker
+from modules.c11_m1 import listing, marks, store, worker
 from modules.c11_m1 import router as c11
 from portal_common import events, problems, tokens
 from portal_common import http as phttp
+from portal_common.problems import Problem
 from tools import test_iam
 
 APPLICATION = "0f8e2d4c-6b1a-4c3e-8f7d-2a9b1c0d3e4f"   # FRAMEWORK 7a
@@ -140,6 +141,62 @@ def test_pages_slice_the_list_and_total_counts_all_matches():
     page = everything(newest_first=False, page=1, size=2)
     assert page == {"items": page["items"], "page": 1, "size": 2, "total": 3} and ids(page) == [third]
     assert everything(newest_first=False, page=5, size=2)["items"] == []
+
+
+# ---------------------------------------------------------------- marks.py: read and hidden per person
+
+
+def task() -> dict:
+    """The open R5 task for staff with `review_company_changes` (Rolf and Otto)."""
+    c11.on_event(change_request())
+    return of_type("CHANGE_REQUEST_OPENED")
+
+
+def test_read_keeps_the_time_of_the_first_read(monkeypatch):
+    n = task()
+    monkeypatch.setattr(store, "now", lambda: "2026-11-06T10:00:00+00:00")
+    marks.mark_read(n, "rolf")
+    monkeypatch.setattr(store, "now", lambda: "2026-11-06T11:00:00+00:00")
+    marks.mark_read(n, "rolf")
+    assert marks.is_read(n, "rolf")
+    assert store.state[(n["notificationId"], "rolf")]["readAt"] == "2026-11-06T10:00:00+00:00"
+
+
+def test_unread_is_idempotent():
+    n = task()
+    marks.mark_read(n, "rolf")
+    marks.mark_unread(n, "rolf")
+    marks.mark_unread(n, "rolf")
+    assert not marks.is_read(n, "rolf")
+
+
+def test_state_is_per_person_also_for_staff_notifications():
+    """Acceptance 13.9: Rolf reads the task; for Otto it stays unread."""
+    n = task()
+    marks.mark_read(n, "rolf")
+    assert marks.is_read(n, "rolf") and not marks.is_read(n, "otto")
+
+
+def test_an_open_task_cannot_be_hidden():
+    """Acceptance 13.8: 409 `task-open` while the task is open."""
+    n = task()
+    with pytest.raises(Problem) as e:
+        marks.hide(n, "rolf")
+    assert (e.value.status, e.value.name) == (409, "task-open") and not marks.is_hidden(n, "rolf")
+
+
+def test_a_done_task_is_hidden_for_that_person_only():
+    n = task()
+    c11.on_event(change_request("CompanyChangeRequestClosed", outcome="APPROVED"))
+    marks.hide(n, "rolf")
+    marks.hide(n, "rolf")
+    assert marks.is_hidden(n, "rolf") and not marks.is_hidden(n, "otto")
+
+
+@pytest.mark.parametrize("topic, done, is_open", [
+    ("ACTION", False, True), ("ACTION", True, False), ("INFO", None, False)])
+def test_only_a_task_that_is_not_done_is_open(topic, done, is_open):
+    assert marks.is_open_task({"topic": topic, "done": done}) is is_open
 
 
 # ---------------------------------------------------------------- api.py: the HTTP layer
