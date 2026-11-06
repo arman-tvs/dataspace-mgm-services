@@ -22,81 +22,79 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""Stand-in of C1-M3 Application Review: review case per application with the checks `NO_DUPLICATE`
-(C3-M1) and `CSP_MATCH_EXPECTED` (C3-M2 `find-companies`), approve and decline by OSP staff, without
-four-eyes approval and automatic approval. In memory.
-"""
+"""C1-M3 Application Review: HTTP layer. Checks token and permission (all operations have scope
+`osp`, README 6.7) and calls `interface.py`."""
 from __future__ import annotations
 
-import datetime as dt
+from typing import Literal
 
-from fastapi import Body
+from fastapi import Body, Query
+from pydantic import BaseModel, Field
 
-from portal_common import events, standin
-from portal_common.problems import Problem
+from portal_common import standin
 
 from . import interface
-from .interface import MODULE, cases
+from .interface import MODULE
 
-STANDIN = True
 router = standin.router(MODULE)
+
+Status = Literal["OPEN", "AWAITING_SECOND_APPROVAL", "APPROVED", "DECLINED", "CLOSED"]
+Kind = Literal["ONBOARDING", "REACTIVATION", "TRANSFER"]
+Verification = Literal["EBW", "DOCUMENTS"]
+
+
+class ApproveRequest(BaseModel):
+    comment: str | None = Field(default=None, min_length=1, max_length=1000)
+
+
+class DeclineRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 def reset() -> None:
     interface.reset()
 
 
-def _case(case_id: str) -> dict:
-    if case_id not in cases:
-        raise Problem(MODULE, 404, "not-found")
-    return cases[case_id]
+def on_startup() -> None:
+    interface.config()   # invalid configuration prevents the start (README 4, 6.6)
+
+
+@router.get("/review-cases")
+def list_review_cases(status: list[Status] | None = Query(None), kind: list[Kind] | None = Query(None),
+                      verification: list[Verification] | None = Query(None), applicationId: str | None = None,
+                      page: int = Query(0, ge=0), size: int = Query(20, ge=1, le=100),
+                      _: dict = standin.perm(MODULE, "GET", "/review-cases")):
+    return interface.list_cases(status, kind, verification, applicationId, page, size)
+
+
+@router.get("/review-cases/{reviewCaseId}")
+def get_review_case(reviewCaseId: str, _: dict = standin.perm(MODULE, "GET", "/review-cases/{reviewCaseId}")):
+    return interface.get_case(reviewCaseId)
+
+
+@router.post("/review-cases/{reviewCaseId}/approve")
+def approve_review_case(reviewCaseId: str, body: ApproveRequest | None = Body(None),
+                        claims: dict = standin.perm(MODULE, "POST", "/review-cases/{reviewCaseId}/approve")):
+    return interface.approve(reviewCaseId, claims["sub"], body.comment if body else None)
+
+
+@router.post("/review-cases/{reviewCaseId}/decline")
+def decline_review_case(reviewCaseId: str, body: DeclineRequest,
+                        claims: dict = standin.perm(MODULE, "POST", "/review-cases/{reviewCaseId}/decline")):
+    return interface.decline(reviewCaseId, claims["sub"], body.reason)
 
 
 @router.post("/steps/open-review")
-def open_review(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/open-review")):
+def step_open_review(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/open-review")):
     return interface.open_review(body)
 
 
 @router.post("/steps/close-review")
-def close_review(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/close-review")):
+def step_close_review(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/close-review")):
     return interface.close_review(body)
 
 
-@router.get("/review-cases")
-def list_cases(_: dict = standin.perm(MODULE, "GET", "/review-cases"), page: int = 0, size: int = 20):
-    items = [interface.summary(c) for c in sorted(cases.values(), key=lambda c: c["openedAt"], reverse=True)]
-    return {"items": items[page * size:(page + 1) * size], "page": page, "size": size, "total": len(items)}
-
-
-@router.get("/review-cases/{reviewCaseId}")
-def get_case(reviewCaseId: str, _: dict = standin.perm(MODULE, "GET", "/review-cases/{reviewCaseId}")):
-    return _case(reviewCaseId)
-
-
-def _decide(case_id: str, claims: dict, outcome: str, reason: str | None = None) -> dict:
-    case = _case(case_id)
-    if case["status"] != "OPEN":
-        raise Problem(MODULE, 409, "invalid-state")
-    if case["applicantSub"] == claims["sub"]:
-        raise Problem(MODULE, 403, "own-application")
-    case["status"], case["decidedAt"] = outcome, dt.datetime.now(dt.UTC).isoformat()
-    case["decision"] = {"decidedAt": case["decidedAt"], "comment": reason, "decidedBy": claims["sub"],
-                        "autoApproved": False}
-    ev = {"applicationId": case["applicationId"], "companyId": case["companyId"], "kind": case["kind"],
-          "existingCompany": case["existingCompany"]}
-    if outcome == "APPROVED":
-        events.publish(MODULE, "ApplicationApproved", ev)
-    else:
-        events.publish(MODULE, "ApplicationDeclined", {**ev, "reason": reason or "declined"})
-    return case
-
-
-@router.post("/review-cases/{reviewCaseId}/approve")
-def approve(reviewCaseId: str, claims: dict = standin.perm(MODULE, "POST", "/review-cases/{reviewCaseId}/approve")):
-    return _decide(reviewCaseId, claims, "APPROVED")
-
-
-@router.post("/review-cases/{reviewCaseId}/decline")
-def decline(reviewCaseId: str, body: dict = Body(default={}),
-            claims: dict = standin.perm(MODULE, "POST", "/review-cases/{reviewCaseId}/decline")):
-    return _decide(reviewCaseId, claims, "DECLINED", body.get("reason"))
+@router.get("/internal/review-cases")
+def get_review_status_by_application(applicationId: str,
+                                     _: dict = standin.perm(MODULE, "GET", "/internal/review-cases")):
+    return interface.get_review_status_by_application(applicationId=applicationId)
