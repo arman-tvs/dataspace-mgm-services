@@ -25,14 +25,13 @@
 #################################################################################
 """The list query of the own inbox (README 7.1): filters, sorting by `createdAt`, paging (FRAMEWORK 4.1).
 
-Works on `Notification` views of `inbox.own`, so it knows nothing about who may see what.
+Works on the `Notification` views it is given (the caller's inbox), so it knows nothing about who may
+see what.
 """
 from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
-
-from modules.c11_m1 import inbox
 
 
 @dataclass(frozen=True)
@@ -45,6 +44,7 @@ class Filters:
     created_since: dt.datetime | None = None
 
     def matches(self, v: dict) -> bool:
+        """True if the view `v` passes every filter that is set."""
         return ((self.topic is None or v["topic"] == self.topic)
                 and (self.ntype is None or v["type"] == self.ntype)
                 and (self.read is None or v["read"] == self.read)
@@ -52,9 +52,9 @@ class Filters:
                 and (self.created_since is None or _utc(v["createdAt"]) >= _utc(self.created_since)))
 
 
-def list_page(claims: dict, filters: Filters, *, newest_first: bool, page: int, size: int) -> dict:
-    """README 7.1: schema `NotificationPage` of the caller's inbox."""
-    items = sorted((v for v in inbox.own(claims) if filters.matches(v)),
+def list_page(views: list[dict], filters: Filters, *, newest_first: bool, page: int, size: int) -> dict:
+    """README 7.1: schema `NotificationPage` of the views that match `filters`."""
+    items = sorted((v for v in views if filters.matches(v)),
                    key=lambda v: _utc(v["createdAt"]), reverse=newest_first)
     return {"items": items[page * size:(page + 1) * size], "page": page, "size": size, "total": len(items)}
 

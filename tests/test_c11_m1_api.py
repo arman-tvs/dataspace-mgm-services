@@ -142,14 +142,16 @@ def test_count_of_the_own_inbox():
 
 def view(**fields) -> dict:
     """A `Notification` view with the fields the filters read."""
-    return {"topic": "INFO", "type": "APPLICATION_SUBMITTED", "read": False, "done": None,
+    return {"notificationId": "n", "topic": "INFO", "type": "APPLICATION_SUBMITTED", "read": False, "done": None,
             "createdAt": "2026-11-06T09:30:00+00:00"} | fields
 
 
+THREE = [view(notificationId=f"n{i}", createdAt=f"2026-11-06T09:3{i}:00+00:00") for i in range(3)]
+
+
 def everything(*, newest_first: bool, page: int = 0, size: int = 20) -> dict:
-    """The inbox of a change reviewer without filters."""
-    return listing.list_page(claims("rolf", "review_company_changes"), listing.Filters(),
-                             newest_first=newest_first, page=page, size=size)
+    """`THREE` without filters."""
+    return listing.list_page(THREE, listing.Filters(), newest_first=newest_first, page=page, size=size)
 
 
 def ids(page: dict) -> list[str]:
@@ -181,15 +183,13 @@ def test_created_since_includes_its_own_time_and_reads_no_offset_as_utc():
 
 
 def test_sorts_newest_first_or_oldest_first():
-    first, second, third = three_change_requests()
-    assert ids(everything(newest_first=True)) == [third, second, first]
-    assert ids(everything(newest_first=False)) == [first, second, third]
+    assert ids(everything(newest_first=True)) == ["n2", "n1", "n0"]
+    assert ids(everything(newest_first=False)) == ["n0", "n1", "n2"]
 
 
 def test_pages_slice_the_list_and_total_counts_all_matches():
-    *_, third = three_change_requests()
     page = everything(newest_first=False, page=1, size=2)
-    assert page == {"items": page["items"], "page": 1, "size": 2, "total": 3} and ids(page) == [third]
+    assert page == {"items": page["items"], "page": 1, "size": 2, "total": 3} and ids(page) == ["n2"]
     assert everything(newest_first=False, page=5, size=2)["items"] == []
 
 
