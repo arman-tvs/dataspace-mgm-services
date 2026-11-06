@@ -57,7 +57,7 @@ def list_notifications(claims: dict = _perm("GET", "/notifications"),
                        size: Annotated[int, Query(ge=1, le=100)] = 20):
     """README 7.1: filters, sorting by `createdAt`, paging as in FRAMEWORK 4.1; invalid filters give 400."""
     filters = listing.Filters(topic, ntype, read, done, createdSince)
-    return listing.list_page(claims, filters, newest_first=sort == "createdAt.desc", page=page, size=size)
+    return listing.list_page(inbox.own(claims), filters, newest_first=sort == "createdAt.desc", page=page, size=size)
 
 
 @router.get("/notifications/count")
