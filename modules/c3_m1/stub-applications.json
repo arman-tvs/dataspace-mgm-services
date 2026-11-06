@@ -1,0 +1,115 @@
+{
+  "_comment": "Built-in stand-in for C1-M2 (C3-M1 11.1): applications of README 14 in the ApplicationInternal format. Used when no address for C1-M2 is configured.",
+  "applications": [
+    {
+      "id": "a0000001-0000-4000-8000-000000000001", "companyId": "c0000001-0000-4000-8000-000000000001",
+      "kind": "ONBOARDING", "existingCompany": false, "status": "SUBMITTED", "verification": "EBW",
+      "attestation": { "attestationId": "3f6c1e2a-7b4d-4e8f-9a51-2c0d6b8e4f17", "verifiedAt": "2026-11-06T08:00:00+00:00" },
+      "applicant": { "sub": "5a1c0001-0000-4000-8000-000000000001" },
+      "companyData": {
+        "legalName": "Beispiel Maschinenbau GmbH",
+        "address": { "streetName": "Musterstraße", "streetNumber": "1", "postalCode": "70569", "city": "Stuttgart", "region": "BW", "countryCode": "DE" },
+        "identifiers": [
+          { "type": "EBWOID", "value": "EBWOID-DE-0000000001", "source": "ATTESTATION" },
+          { "type": "EUID", "value": "DEXX001T.HRB100001", "source": "ATTESTATION" },
+          { "type": "VAT_ID", "value": "DE123456789", "source": "APPLICANT" }
+        ]
+      },
+      "companyRoles": [ "ACTIVE_PARTICIPANT" ],
+      "consents": [
+        { "agreementKey": "terms-active-participant", "version": "1.0", "language": "en", "givenAt": "2026-11-06T08:05:00+00:00" },
+        { "agreementKey": "security-regulations", "version": "1.0", "language": "en", "givenAt": "2026-11-06T08:05:00+00:00" }
+      ]
+    },
+    {
+      "id": "a0000002-0000-4000-8000-000000000002", "companyId": "c0000002-0000-4000-8000-000000000002",
+      "kind": "ONBOARDING", "existingCompany": false, "status": "SUBMITTED", "verification": "DOCUMENTS",
+      "attestation": null,
+      "applicant": { "sub": "5a1c0003-0000-4000-8000-000000000003" },
+      "companyData": {
+        "legalName": "Beispiel Logistik GmbH",
+        "address": { "streetName": "Hafenstraße", "streetNumber": "5", "postalCode": "68159", "city": "Mannheim", "region": "BW", "countryCode": "DE" },
+        "identifiers": [
+          { "type": "COMMERCIAL_REG_NUMBER", "value": "HRB 200002", "source": "APPLICANT" },
+          { "type": "VAT_ID", "value": "DE987654321", "source": "APPLICANT" }
+        ]
+      },
+      "companyRoles": [ "ACTIVE_PARTICIPANT" ],
+      "consents": [
+        { "agreementKey": "terms-active-participant", "version": "1.0", "language": "en", "givenAt": "2026-11-06T08:05:00+00:00" },
+        { "agreementKey": "security-regulations", "version": "1.0", "language": "en", "givenAt": "2026-11-06T08:05:00+00:00" }
+      ]
+    },
+    {
+      "id": "a0000003-0000-4000-8000-000000000003", "companyId": "c0000003-0000-4000-8000-000000000003",
+      "kind": "ONBOARDING", "existingCompany": false, "status": "SUBMITTED", "verification": "DOCUMENTS",
+      "attestation": null,
+      "applicant": { "sub": "5a1c0003-0000-4000-8000-000000000003" },
+      "companyData": {
+        "legalName": "Ohne Zustimmung GmbH",
+        "address": { "streetName": "Ringstraße", "streetNumber": "3", "postalCode": "76131", "city": "Karlsruhe", "countryCode": "DE" },
+        "identifiers": [ { "type": "VAT_ID", "value": "DE111111111", "source": "APPLICANT" } ]
+      },
+      "companyRoles": [ "ACTIVE_PARTICIPANT" ],
+      "consents": []
+    },
+    {
+      "id": "a0000005-0000-4000-8000-000000000005", "companyId": "c0000001-0000-4000-8000-000000000001",
+      "kind": "REACTIVATION", "existingCompany": true, "status": "SUBMITTED", "verification": "EBW",
+      "attestation": { "attestationId": "3f6c1e2a-7b4d-4e8f-9a51-2c0d6b8e4f99", "verifiedAt": "2026-11-06T09:00:00+00:00" },
+      "applicant": { "sub": "5a1c0001-0000-4000-8000-000000000001" },
+      "companyData": {
+        "legalName": "Beispiel Maschinenbau GmbH",
+        "address": { "streetName": "Musterstraße", "streetNumber": "7", "postalCode": "70569", "city": "Stuttgart", "countryCode": "DE" },
+        "identifiers": [
+          { "type": "EBWOID", "value": "EBWOID-DE-0000000001", "source": "ATTESTATION" },
+          { "type": "VAT_ID", "value": "DE123456789", "source": "APPLICANT" }
+        ]
+      },
+      "companyRoles": [ "ACTIVE_PARTICIPANT" ],
+      "consents": []
+    },
+    {
+      "id": "a0000006-0000-4000-8000-000000000006", "companyId": "c0000002-0000-4000-8000-000000000002",
+      "kind": "REACTIVATION", "existingCompany": true, "status": "SUBMITTED", "verification": "DOCUMENTS",
+      "attestation": null,
+      "applicant": { "sub": "5a1c0003-0000-4000-8000-000000000003" },
+      "companyData": {
+        "legalName": "Beispiel Logistik GmbH",
+        "address": { "streetName": "Hafenstraße", "streetNumber": "5", "postalCode": "68159", "city": "Mannheim", "countryCode": "DE" },
+        "identifiers": [ { "type": "VAT_ID", "value": "DE987654321", "source": "APPLICANT" } ]
+      },
+      "companyRoles": [ "ACTIVE_PARTICIPANT" ],
+      "consents": []
+    },
+    {
+      "id": "a0000007-0000-4000-8000-000000000007", "companyId": "c0000002-0000-4000-8000-000000000002",
+      "kind": "TRANSFER", "existingCompany": true, "status": "SUBMITTED", "verification": "DOCUMENTS",
+      "attestation": null,
+      "applicant": { "sub": "5a1c0003-0000-4000-8000-000000000003" },
+      "companyData": {
+        "legalName": "Beispiel Logistik GmbH",
+        "address": { "streetName": "Hafenstraße", "streetNumber": "5", "postalCode": "68159", "city": "Mannheim", "countryCode": "DE" },
+        "identifiers": [ { "type": "VAT_ID", "value": "DE987654321", "source": "APPLICANT" } ]
+      },
+      "companyRoles": [ "ACTIVE_PARTICIPANT" ],
+      "consents": []
+    },
+    {
+      "id": "a0000008-0000-4000-8000-000000000008", "companyId": "c0000004-0000-4000-8000-000000000004",
+      "kind": "TRANSFER", "existingCompany": false, "status": "SUBMITTED", "verification": "EBW",
+      "attestation": { "attestationId": "3f6c1e2a-7b4d-4e8f-9a51-2c0d6b8e4f55", "verifiedAt": "2026-11-06T08:30:00+00:00" },
+      "applicant": { "sub": "5a1c0001-0000-4000-8000-000000000001" },
+      "companyData": {
+        "legalName": "Andere Beispiel AG",
+        "address": { "streetName": "Beispielweg", "streetNumber": "2", "postalCode": "80331", "city": "München", "region": "BY", "countryCode": "DE" },
+        "identifiers": [ { "type": "EBWOID", "value": "EBWOID-DE-0000000002", "source": "ATTESTATION" } ]
+      },
+      "companyRoles": [ "ACTIVE_PARTICIPANT" ],
+      "consents": [
+        { "agreementKey": "terms-active-participant", "version": "1.0", "language": "en", "givenAt": "2026-11-06T08:35:00+00:00" },
+        { "agreementKey": "security-regulations", "version": "1.0", "language": "en", "givenAt": "2026-11-06T08:35:00+00:00" }
+      ]
+    }
+  ]
+}
