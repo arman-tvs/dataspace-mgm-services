@@ -115,6 +115,8 @@ The spec defines the outside of a module; the inside follows
 - Data: dataclasses inside, Pydantic only in `schemas.py`, `dict` only at `interface.py`; camelCase only at the edges.
   A module that passes `dict`s may go `dict` -> `TypedDict` -> dataclass step by step.
 - Limits: at most 500 lines per file, 60 lines and a complexity of 10 per function, type hints on every function.
+- In a subpackage (`services/`, `adapters/`) import the module's own files absolutely, `from modules.<id> import
+  store`, not `from .. import store` (`tests/test_interfaces.py` reads that as a foreign module).
 - Examples in the code base: C2-M3 for the layers, C3-M2 for dataclasses and `errors.py`, C4-M2 for adapters.
 
 ## Quality gate

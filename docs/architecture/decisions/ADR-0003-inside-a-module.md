@@ -42,6 +42,9 @@ modules/<id>/
 | errors | any other layer |
 
 Service, store, gateways and errors do not import `fastapi`, `pydantic` or `starlette`: HTTP stays at the edge.
+Inside a subpackage (`services/`, `adapters/`), import the module's own files absolutely
+(`from modules.<id> import errors, store`), not with `from .. import`: `tests/test_interfaces.py` reads a two-dot
+import as a foreign module. One dot within the same subpackage (`from .common import ...`) is fine.
 Protocols ("ports") are used only where something is really exchanged: the store (memory and PostgreSQL) and external
 systems (Keycloak, wallet providers, the CSP). Neighbour modules and events need no own port, because
 `portal_common.neighbours` and `portal_common.events` already hide in-process, HTTP and stand-in (FRAMEWORK 4.7).
