@@ -230,18 +230,18 @@ def test_the_reactivation_keeps_the_house_number_of_the_application(active):
 
 def test_the_start_survives_a_database_without_a_driver(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://x/y")
-    monkeypatch.setattr(interface.store, "_cache", None)
-    real_import = interface.store.importlib.import_module
+    monkeypatch.setattr(store, "_cache", None)
+    real_import = store.importlib.import_module
 
     def fake_import(name, package=None):
         if name == ".store_postgres":
             raise ModuleNotFoundError("No module named 'psycopg'", name="psycopg")
         return real_import(name, package)
 
-    monkeypatch.setattr(interface.store.importlib, "import_module", fake_import)
+    monkeypatch.setattr(store.importlib, "import_module", fake_import)
     interface.reset()                                    # must not raise
     with pytest.raises(Problem) as error:
-        interface.store.get_company("11111111-1111-4111-8111-111111111111")
+        store.get_company("11111111-1111-4111-8111-111111111111")
     assert error.value.status == 501
 
 

@@ -30,7 +30,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from modules.c3_m1 import interface, router as c3_router
+from modules.c3_m1 import interface, store
+from modules.c3_m1 import router as c3_router
 from portal_common import http as phttp
 from portal_common import problems, standin
 from tools import test_iam
@@ -117,11 +118,11 @@ def test_a_member_may_read_but_not_patch(client, active):
 
 # ------------------------------------------------------------------------------------------ 13.10
 def test_the_short_name_is_changed_and_locked_fields_refused(client, active):
-    assert len(interface.store.list_audit(U1)) > 0
+    assert len(store.list_audit(U1)) > 0
     response = call(client, "PATCH", f"/api/c3-m1/companies/{U1}", P1,
                     json={"shortName": "BMW"})
     assert response.status_code == 200 and response.json()["shortName"] == "BMW"
-    audit = interface.store.list_audit(U1)[-1]
+    audit = store.list_audit(U1)[-1]
     assert audit["sub"] == "5a1c0001-0000-4000-8000-000000000001"
     assert audit["details"]["old"]["short_name"] is None
 
@@ -148,7 +149,7 @@ def test_the_osp_correction_switches_the_source_to_manual(client, active):
     assert body["address"]["street"] == "Neue Straße" and body["address"]["countryCode"] == "DE"
     assert body["coreDataSource"] == "MANUAL" and body["verificationRef"] is None
     assert body["coreDataVerifiedAt"] is not None
-    assert [e for e in interface.store.list_audit(U1) if e["operation"] == "correctCompany"]
+    assert [e for e in store.list_audit(U1) if e["operation"] == "correctCompany"]
 
 
 def test_the_country_is_locked_after_the_bpn(client, active):
