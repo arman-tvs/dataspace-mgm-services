@@ -2,6 +2,7 @@
 
 | Date | Decision | Reason |
 |---|---|---|
+| 7 Nov 2026 | **Inside a module:** layers with imports pointing down, ports only for the store and external systems, dataclasses inside, repository, gateways, error factories and adapters, balanced limits; enforced by one quality gate for people and coding agents ([ADR-0003](decisions/ADR-0003-inside-a-module.md)). | The spec defines only the outside of a module; four layouts in 13 modules; agents and people keep a rule reliably only when a check fails. |
 | 6 Nov 2026 | **Events as CloudEvents 1.0** and the event inbox `POST /api/v1/events/inbox` for split-out modules ([ADR-0001](decisions/ADR-0001-events-as-cloudevents.md), proposal OP-54). | A standard format for transport and tooling; envelope and content separated; a module only publishes its own events. |
 | 28 Oct 2026 | **OSP 2.0:** every OSP runs its own portal installation, the CSP provides trust. PSP admission, delegation and sign-in services per PSP are dropped; CSP Connection (C3-M2) is new. | No single party should run the portal for all participants of a dataspace. |
 | 26 Oct 2026 | Callbacks from external systems use one service account per system with `private_key_jwt`, a client secret only as a transition (OP-22). | Strong authentication of external systems. |
