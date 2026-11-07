@@ -84,6 +84,14 @@ OSP_LOCKED_FIELDS = {"bpn", "status", "coreDataSource", "applicationId", "verifi
                      "deactivationReason", "createdAt", "changedAt"}
 
 
+def _locked_for_staff(row: dict, fields: dict) -> list[str]:
+    """Fields OSP staff may not correct (6.6, 7.12); the country only while REQUESTED and without a BPN."""
+    locked = [key for key in fields if key not in CORE_TEXT_FIELDS + ("short_name",)]
+    if "country_code" in fields and (row["status"] != "REQUESTED" or row["bpn"]):
+        locked.append("countryCode")
+    return locked
+
+
 def correct_company(companyId: str, body: dict, sub: str | None = None) -> dict:
     """7.12: correction by OSP staff, always with a justification."""
     with store.lock(companyId):
@@ -95,9 +103,7 @@ def correct_company(companyId: str, body: dict, sub: str | None = None) -> dict:
         fields = {key: value for key, value in validation.flat_fields(body).items()
                   if key not in ("reason", "identifiers")}
 
-        locked = [key for key in fields if key not in CORE_TEXT_FIELDS + ("short_name",)]
-        if "country_code" in fields and (row["status"] != "REQUESTED" or row["bpn"]):
-            locked.append("countryCode")
+        locked = _locked_for_staff(row, fields)
         if locked:
             raise errors.field_locked(fields=locked)
 

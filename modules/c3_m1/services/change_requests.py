@@ -101,36 +101,8 @@ def create_change_request(companyId: str, data: dict,
             raise errors.change_request_open()
 
         changes = {key: value for key, value in data.items() if key in ("name", "address", "identifiers")}
-        identifiers = changes.get("identifiers")
-        wallet = [{"type": entry["type"], "value": entry["value"], "source": entry["source"]}
-                  for entry in store.list_identifiers(companyId) if entry["source"] == "BUSINESS_WALLET"]
-        invalid = validation.validate_change_request(data, row["country_code"])
-        if identifiers is not None:
-            if not identifiers and wallet:
-                # "afterwards at least one identifier" counts the wallet identifiers that stay
-                invalid = [error for error in invalid
-                          if not (error["field"] == "identifiers" and error["reason"] == "missing")]
-            invalid += _wallet_identifier_conflict(row, identifiers)
-        if invalid:
-            raise errors.validation(errors=invalid)
-        core_changed = any(_differs_field(row, key, value)
-                           for key, value in changes.items() if key != "identifiers")
-        if identifiers is not None and _identifier_core_changed(row, identifiers):
-            core_changed = True
-        if core_changed and row["core_data_source"] == "EBW":
-            raise errors.attestation_required()
-        if not _changes_differs(row, changes):
-            raise errors.validation(errors=[{"field": "changes", "reason": "no change"}])
-
-        invalid = []
-        if not 1 <= len(documents) <= config.change_request_max_documents():
-            maximum = config.change_request_max_documents()
-            invalid.append({"field": "documents", "reason": f"1 to {maximum} documents"})
-        for file_name, content, stated in documents:
-            invalid += validation.validate_document(file_name, content, stated_media_type=stated,
-                                                   max_bytes=config.change_request_max_document_bytes())
-        if invalid:
-            raise errors.document_invalid(errors=invalid)
+        _check_requested_changes(companyId, row, data, changes)
+        _check_documents(documents)
 
         created = store.create_change_request({
             "company_id": companyId, "changes": changes, "comment": data.get("comment"),
@@ -144,6 +116,43 @@ def create_change_request(companyId: str, data: dict,
         events.publish(MODULE, "CompanyChangeRequestSubmitted",
                        {"companyId": companyId, "changeRequestId": created["id"]})
     return _change_request_view(created)
+
+
+def _check_requested_changes(companyId: str, row: dict, data: dict, changes: dict) -> None:
+    """400 `validation` for invalid or empty changes; 409 `attestation-required` for EBW core data (6.3)."""
+    identifiers = changes.get("identifiers")
+    wallet = [{"type": entry["type"], "value": entry["value"], "source": entry["source"]}
+              for entry in store.list_identifiers(companyId) if entry["source"] == "BUSINESS_WALLET"]
+    invalid = validation.validate_change_request(data, row["country_code"])
+    if identifiers is not None:
+        if not identifiers and wallet:
+            # "afterwards at least one identifier" counts the wallet identifiers that stay
+            invalid = [error for error in invalid
+                       if not (error["field"] == "identifiers" and error["reason"] == "missing")]
+        invalid += _wallet_identifier_conflict(row, identifiers)
+    if invalid:
+        raise errors.validation(errors=invalid)
+    core_changed = any(_differs_field(row, key, value)
+                       for key, value in changes.items() if key != "identifiers")
+    if identifiers is not None and _identifier_core_changed(row, identifiers):
+        core_changed = True
+    if core_changed and row["core_data_source"] == "EBW":
+        raise errors.attestation_required()
+    if not _changes_differs(row, changes):
+        raise errors.validation(errors=[{"field": "changes", "reason": "no change"}])
+
+
+def _check_documents(documents: list[tuple[str, bytes, str | None]]) -> None:
+    """400 `document-invalid`: 1 to CHANGE_REQUEST_MAX_DOCUMENTS documents of an allowed type and size."""
+    invalid = []
+    if not 1 <= len(documents) <= config.change_request_max_documents():
+        maximum = config.change_request_max_documents()
+        invalid.append({"field": "documents", "reason": f"1 to {maximum} documents"})
+    for file_name, content, stated in documents:
+        invalid += validation.validate_document(file_name, content, stated_media_type=stated,
+                                               max_bytes=config.change_request_max_document_bytes())
+    if invalid:
+        raise errors.document_invalid(errors=invalid)
 
 
 def list_own_change_requests(companyId: str, page: int = 0, size: int = 20) -> dict:

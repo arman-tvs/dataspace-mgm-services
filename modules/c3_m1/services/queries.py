@@ -99,6 +99,25 @@ def find_identifier_matches(*, identifiers: list[dict], name: str | None = None,
                             statuses: list[str] | str | None = None, **_other: object) -> dict:
     """9.3: local duplicate search; the caller decides whether a match is a duplicate."""
     wanted_statuses = [statuses] if isinstance(statuses, str) else list(statuses or [])
+    _check_match_request(identifiers, wanted_statuses)
+    candidates = _all_companies(wanted_statuses or ["REQUESTED", "ACTIVE", "INACTIVE"])
+    wanted_name = validation.normalise(name) if name else None
+    matches = []
+    for row in candidates:
+        if row["id"] == excludeCompanyId:
+            continue
+        matched = _matched_on(row, identifiers)
+        if wanted_name and validation.normalise(row["name"]) == wanted_name:
+            matched.append("NAME")
+        if matched:
+            matches.append({"companyId": row["id"], "name": row["name"], "status": row["status"],
+                            "bpn": row["bpn"], "matchedOn": matched})
+    matches.sort(key=lambda match: len(match["matchedOn"]), reverse=True)
+    return {"matches": matches}
+
+
+def _check_match_request(identifiers: list[dict], wanted_statuses: list[str]) -> None:
+    """400 `validation` for 9.3: 1 to 10 identifiers of known types with values, known statuses."""
     invalid = []
     if not 1 <= len(identifiers) <= 10:
         invalid.append({"field": "identifiers", "reason": "1 to 10 entries"})
@@ -112,31 +131,25 @@ def find_identifier_matches(*, identifiers: list[dict], name: str | None = None,
             invalid.append({"field": "statuses", "reason": value})
     if invalid:
         raise errors.validation(errors=invalid)
-    if not 1 <= len(identifiers) <= 10:
-        raise errors.validation(errors=[{"field": "identifiers", "reason": "1 to 10 entries"}])
-    candidates, page, total = [], 0, None
+
+
+def _all_companies(statuses: list[str]) -> list[dict]:
+    """Every company with one of the statuses, page by page."""
+    candidates: list[dict] = []
+    page, total = 0, None
     while total is None or len(candidates) < total:
-        batch, total = store.find_companies(
-            status=wanted_statuses or ["REQUESTED", "ACTIVE", "INACTIVE"], page=page, size=100)
+        batch, total = store.find_companies(status=statuses, page=page, size=100)
         candidates += batch
         if not batch:
             break
         page += 1
-    wanted_name = validation.normalise(name) if name else None
-    matches = []
-    for row in candidates:
-        if row["id"] == excludeCompanyId:
-            continue
-        own = {(entry["type"], entry["value_normalized"])
-               for entry in store.list_identifiers(row["id"])}
-        if row["bpn"]:
-            own.add(("BPN", validation.value_normalized(row["bpn"])))
-        matched = sorted({entry["type"] for entry in identifiers
-                          if (entry["type"], validation.value_normalized(entry["value"])) in own})
-        if wanted_name and validation.normalise(row["name"]) == wanted_name:
-            matched.append("NAME")
-        if matched:
-            matches.append({"companyId": row["id"], "name": row["name"], "status": row["status"],
-                            "bpn": row["bpn"], "matchedOn": matched})
-    matches.sort(key=lambda match: len(match["matchedOn"]), reverse=True)
-    return {"matches": matches}
+    return candidates
+
+
+def _matched_on(row: dict, identifiers: list[dict]) -> list[str]:
+    """The identifier types (and BPN) of the request that the company has, normalised."""
+    own = {(entry["type"], entry["value_normalized"]) for entry in store.list_identifiers(row["id"])}
+    if row["bpn"]:
+        own.add(("BPN", validation.value_normalized(row["bpn"])))
+    return sorted({entry["type"] for entry in identifiers
+                   if (entry["type"], validation.value_normalized(entry["value"])) in own})
