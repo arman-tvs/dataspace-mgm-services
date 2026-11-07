@@ -44,7 +44,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "mypy>=2.4.1",
     "pytest>=8.0",
+    "ruff>=0.17.4",
 ]
 
 [tool.pytest.ini_options]
@@ -54,3 +56,35 @@ filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
 
 [tool.uv]
 package = false
+
+# Quality gate (tools/quality/gate.py, docs/architecture/decisions/ADR-0003-inside-a-module.md).
+# Existing findings are frozen per area in tools/quality/baseline.json; a pull request may not add new ones.
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+# ebw/ is a separate project (own requirements.txt and `tools` package), not part of this application.
+extend-exclude = ["spec", "ebw"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C90", "SIM"]
+# B008: FastAPI declares parameters with function calls in defaults (Body(...), Depends(...), Query(...)).
+ignore = ["B008"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.isort]
+known-first-party = ["modules", "portal_common", "scaffold", "tools", "controllers", "iam", "ebw", "conftest"]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest fixtures are imported from other test files and used as parameters (F401, F811);
+# a test reads top to bottom, so its complexity is not limited (C901).
+"tests/**" = ["F401", "F811", "C901"]
+
+[tool.mypy]
+python_version = "3.12"
+disallow_untyped_defs = true
+check_untyped_defs = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+exclude = ["^spec/", "^ebw/", "^\\.venv/"]
