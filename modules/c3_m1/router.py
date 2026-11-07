@@ -41,6 +41,8 @@ from . import interface
 from .interface import MODULE, company_view, role_view
 
 router = standin.router(MODULE)
+# standin.router() tags every router "<module> (stand-in)" in Swagger; C3-M1 is implemented.
+router.tags = ["c3-m1 Company Profile"]
 
 
 def reset() -> None:
