@@ -118,11 +118,8 @@ def _moment(value, field: str) -> dt.datetime:
     return dt.datetime.fromtimestamp(value, dt.UTC)
 
 
-def verify(attestation: str, *, now: dt.datetime | None = None) -> dict:
-    """The claims of a valid attestation; raises `attestation-invalid` or `upstream-error` (6.7)."""
-    points = now or dt.datetime.now(dt.UTC)
-    skew = dt.timedelta(seconds=config.attestation_clock_skew_seconds())
-
+def _header(attestation: str) -> dict:
+    """The JOSE header of a compact JWS with the `typ` and `alg` of 6.7."""
     parts = (attestation or "").split(".")
     if len(parts) != 3:
         raise _invalid("format", "not a compact JWS")
@@ -132,10 +129,13 @@ def verify(attestation: str, *, now: dt.datetime | None = None) -> dict:
         raise _invalid("format", "header unreadable") from error
     if not isinstance(header, dict):
         raise _invalid("format", "header is no object")
-
     if header.get("typ") != TYP or header.get("alg") != ALGORITHM:
         raise _invalid("algorithm", f"typ {header.get('typ')!r}, alg {header.get('alg')!r}")
+    return header
 
+
+def _signed_claims(attestation: str, header: dict) -> dict:
+    """The claims, after the issuer is the installation's EBW-Connector and the signature verifies with its key."""
     try:
         claims = jwt.decode(attestation, options={"verify_signature": False, "verify_aud": False,
                                                   "verify_exp": False, "verify_iat": False})
@@ -143,27 +143,19 @@ def verify(attestation: str, *, now: dt.datetime | None = None) -> dict:
         raise _invalid("format", f"payload unreadable: {error}") from error
     if claims.get("iss") != config.attestation_issuer():
         raise _invalid("issuer", f"iss {claims.get('iss')!r}")
-
     key = _key_for(header.get("kid"))
     try:
-        claims = jwt.decode(attestation, jwt.PyJWK(key).key, algorithms=[ALGORITHM],
-                            options={"verify_aud": False, "verify_exp": False, "verify_iat": False})
+        verified: dict = jwt.decode(attestation, jwt.PyJWK(key).key, algorithms=[ALGORITHM],
+                                    options={"verify_aud": False, "verify_exp": False, "verify_iat": False})
     except jwt.InvalidSignatureError as error:
         raise _invalid("signature", "signature does not verify") from error
     except jwt.PyJWTError as error:
         raise _invalid("signature", str(error)) from error
+    return verified
 
-    audience = claims.get("aud")
-    audience = [audience] if isinstance(audience, str) else list(audience or [])
-    if config.attestation_audience() not in audience:
-        raise _invalid("audience", f"aud {audience!r}")
 
-    expires, issued = _moment(claims.get("exp"), "exp"), _moment(claims.get("iat"), "iat")
-    if expires <= points - skew:
-        raise _invalid("expired", "exp is in the past")
-    if issued > points + skew:
-        raise _invalid("not-yet-valid", "iat is in the future")
-
+def _missing_claims(claims: dict) -> list[str]:
+    """Required claims that are missing or wrong (6.7): company data, purpose, client."""
     company = claims.get("company")
     missing = [name for name in REQUIRED_CLAIMS if claims.get(name) in (None, "")]
     if not isinstance(company, dict):
@@ -176,6 +168,28 @@ def verify(attestation: str, *, now: dt.datetime | None = None) -> dict:
     clients = config.attestation_client_ids()
     if clients and claims.get("client_id") not in clients:
         missing.append("client_id")
+    return missing
+
+
+def verify(attestation: str, *, now: dt.datetime | None = None) -> dict:
+    """The claims of a valid attestation; raises `attestation-invalid` or `upstream-error` (6.7)."""
+    points = now or dt.datetime.now(dt.UTC)
+    skew = dt.timedelta(seconds=config.attestation_clock_skew_seconds())
+    header = _header(attestation)
+    claims = _signed_claims(attestation, header)
+
+    audience = claims.get("aud")
+    audience = [audience] if isinstance(audience, str) else list(audience or [])
+    if config.attestation_audience() not in audience:
+        raise _invalid("audience", f"aud {audience!r}")
+
+    expires, issued = _moment(claims.get("exp"), "exp"), _moment(claims.get("iat"), "iat")
+    if expires <= points - skew:
+        raise _invalid("expired", "exp is in the past")
+    if issued > points + skew:
+        raise _invalid("not-yet-valid", "iat is in the future")
+
+    missing = _missing_claims(claims)
     if missing:
         raise _invalid("claims", "missing or wrong: " + ", ".join(missing))
 
