@@ -46,16 +46,7 @@ def create_company(input: dict) -> dict:
         raise errors.conflict(detail="company belongs to another application",
                       retryable=False)
 
-    application = gateways.application(application_id)
-    if application.get("companyId") != cid:
-        raise errors.conflict(detail="application has another companyId",
-                      retryable=False)
-    if application.get("kind") == "REACTIVATION":
-        raise errors.conflict(detail="reactivation uses reactivate-company",
-                      retryable=False)
-    if application.get("status") not in ("SUBMITTED", "APPROVED"):
-        raise errors.invalid_state(detail=f"application {application.get('status')}", retryable=False)
-
+    application = _onboarding_application(cid, application_id)
     data = application.get("companyData") or {}
     source_address = data.get("address") or {}
     verification = application.get("verification")
@@ -68,15 +59,7 @@ def create_company(input: dict) -> dict:
                    for entry in data.get("identifiers") or []]
     roles = [role for role in application.get("companyRoles") or []
              if config.assignable_by(role) == "COMPANY"]
-
-    invalid = validation.validate_company(row)
-    invalid += validation.validate_identifiers(identifiers, row["country_code"])
-    for role in application.get("companyRoles") or []:
-        invalid += validation.validate_company_role(role, config.role_catalogue())
-    if verification == "EBW" and not any(entry["type"] == "EBWOID" for entry in identifiers):
-        invalid.append({"field": "identifiers", "reason": "EBWOID required with a verification"})
-    if invalid:
-        raise errors.validation(errors=invalid, retryable=False)
+    _check_new_company(row, identifiers, application.get("companyRoles") or [], verification)
 
     attestation = application.get("attestation") or {}
     with store.lock(cid):
@@ -98,6 +81,30 @@ def create_company(input: dict) -> dict:
     return standin.step_reply(input, {"companyId": cid, "status": created["status"],
                                       "bpn": created["bpn"],
                                       "coreDataSource": created["core_data_source"]})
+
+
+def _onboarding_application(cid: str | None, application_id: str | None) -> dict:
+    """The submitted or approved application of 8.1, of kind ONBOARDING or TRANSFER, for this company."""
+    application = gateways.application(application_id)
+    if application.get("companyId") != cid:
+        raise errors.conflict(detail="application has another companyId", retryable=False)
+    if application.get("kind") == "REACTIVATION":
+        raise errors.conflict(detail="reactivation uses reactivate-company", retryable=False)
+    if application.get("status") not in ("SUBMITTED", "APPROVED"):
+        raise errors.invalid_state(detail=f"application {application.get('status')}", retryable=False)
+    return application
+
+
+def _check_new_company(row: dict, identifiers: list[dict], roles: list[str], verification: object) -> None:
+    """400 `validation` for invalid core data, identifiers or roles; an EBW verification needs an EBWOID."""
+    invalid = validation.validate_company(row)
+    invalid += validation.validate_identifiers(identifiers, row["country_code"])
+    for role in roles:
+        invalid += validation.validate_company_role(role, config.role_catalogue())
+    if verification == "EBW" and not any(entry["type"] == "EBWOID" for entry in identifiers):
+        invalid.append({"field": "identifiers", "reason": "EBWOID required with a verification"})
+    if invalid:
+        raise errors.validation(errors=invalid, retryable=False)
 
 
 # ----------------------------------------------------------------------------------- steps (8.2)
@@ -163,27 +170,10 @@ def activate_company(input: dict) -> dict:
         application = gateways.application(application_id)
         terms = _terms_of_roles()
         given = {consent.get("agreementKey"): consent for consent in application.get("consents") or []}
-        active, pending = [], []
-        for role, status in store.list_roles(cid).items():
-            if status != "REQUESTED":
-                continue
-            needed = {key for key, roles in terms.items() if role in roles}
-            if needed <= set(given):
-                active.append(role)
-            else:
-                pending.append(role)
+        active, pending = _roles_with_consent(cid, terms, given)
         if not active:
-            raise errors.roles_without_consent(missing=sorted(pending),
-                          retryable=False)
-
-        applicant = (application.get("applicant") or {}).get("sub")
-        for role in active:
-            store.add_role(cid, role, status="ACTIVE", source_kind="APPLICATION",
-                           source_ref=application_id)
-            for key in (key for key, roles in terms.items() if role in roles):
-                store.set_consent(cid, key, version=given[key].get("version"), status="ACTIVE",
-                                  source_kind="APPLICATION", source_ref=application_id,
-                                  consented_by=applicant, consented_at=given[key].get("givenAt"))
+            raise errors.roles_without_consent(missing=sorted(pending), retryable=False)
+        _take_over_roles(cid, application_id, application, active, terms, given)
         fields = {"status": "ACTIVE", "activated_at": _now()}
         if row["core_data_source"] == "MANUAL" and not row["core_data_verified_at"]:
             fields["core_data_verified_at"] = _now()
@@ -194,6 +184,32 @@ def activate_company(input: dict) -> dict:
                                                     "companyRoles": sorted(active)})
     return standin.step_reply(input, {"companyId": cid, "status": "ACTIVE", "bpn": row["bpn"],
                                       "companyRoles": sorted(active), "pendingCompanyRoles": pending})
+
+
+def _roles_with_consent(cid: str, terms: dict[str, set[str]], given: dict) -> tuple[list[str], list[str]]:
+    """The REQUESTED roles whose terms all have a consent in the application, and the others."""
+    active, pending = [], []
+    for role, status in store.list_roles(cid).items():
+        if status != "REQUESTED":
+            continue
+        needed = {key for key, roles in terms.items() if role in roles}
+        if needed <= set(given):
+            active.append(role)
+        else:
+            pending.append(role)
+    return active, pending
+
+
+def _take_over_roles(cid: str, application_id: str | None, application: dict, active: list[str],
+                     terms: dict[str, set[str]], given: dict) -> None:
+    """The roles become ACTIVE with the consents of the application (8.3)."""
+    applicant = (application.get("applicant") or {}).get("sub")
+    for role in active:
+        store.add_role(cid, role, status="ACTIVE", source_kind="APPLICATION", source_ref=application_id)
+        for key in (key for key, roles in terms.items() if role in roles):
+            store.set_consent(cid, key, version=given[key].get("version"), status="ACTIVE",
+                              source_kind="APPLICATION", source_ref=application_id,
+                              consented_by=applicant, consented_at=given[key].get("givenAt"))
 
 
 # ----------------------------------------------------------------------------------- steps (8.4)
