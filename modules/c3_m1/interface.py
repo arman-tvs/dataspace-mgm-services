@@ -36,13 +36,11 @@ writes the audit log of README 5 and FRAMEWORK 4.3 before it publishes.
 from __future__ import annotations
 
 import datetime as dt
-import json
 
-from portal_common import events, neighbours, standin
+from portal_common import events, standin
 from portal_common.problems import Problem
-from tools import testdata
 
-from . import attestation, config, errors, store, validation
+from . import attestation, config, errors, gateways, store, validation
 
 MODULE = "c3-m1"
 
@@ -173,34 +171,6 @@ def role_view(cid: str | None) -> dict:
 
 
 # ----------------------------------------------------------------------------------- steps (8.1)
-def _stub_applications() -> dict[str, dict]:
-    """Built-in stand-in for C1-M2 (11.1): `STUB_APPLICATIONS_FILE` in `ApplicationInternal` form."""
-    path = config.stub_applications_file()
-    if path is None:
-        return {}
-    document = json.loads(path.read_text(encoding="utf-8"))
-    entries = document.get("applications") if isinstance(document, dict) else document
-    return {entry["id"]: entry for entry in entries or []}
-
-
-def _application(application_id: str | None) -> dict:
-    config.apply_registration_url()
-    """The application at C1-M2 (11.1); a failed call is an error, not "not found" (skill 5)."""
-    if neighbours.is_standin("c1-m2"):
-        application = _stub_applications().get(application_id or "")
-        if application is None:
-            raise errors.not_found(detail="application unknown", retryable=False)
-        return application
-    try:
-        application = neighbours.query(MODULE, "c1-m2", "get_application_internal",
-                                       applicationId=application_id)
-    except Problem:
-        raise
-    if not application:
-        raise errors.not_found(detail="application unknown", retryable=False)
-    return application
-
-
 def create_company(input: dict) -> dict:
     """8.1: create the company `REQUESTED` from a submitted application of kind ONBOARDING/TRANSFER."""
     cid, application_id = input.get("companyId"), input.get("applicationId")
@@ -213,7 +183,7 @@ def create_company(input: dict) -> dict:
         raise errors.conflict(detail="company belongs to another application",
                       retryable=False)
 
-    application = _application(application_id)
+    application = gateways.application(application_id)
     if application.get("companyId") != cid:
         raise errors.conflict(detail="application has another companyId",
                       retryable=False)
@@ -296,17 +266,12 @@ def assign_identifier(input: dict) -> dict:
 
 # ----------------------------------------------------------------------------------- steps (8.3)
 def _terms_of_roles() -> dict[str, set[str]]:
-    config.apply_registration_url()
     """agreementKey -> roles it belongs to, from the terms of C1-M2 (11.1).
 
     Without an address for C1-M2 the built-in stand-in answers with the initial values of 14.3.
     """
-    if neighbours.is_standin("c1-m2"):
-        agreements = testdata.agreements()
-    else:
-        agreements = neighbours.query(MODULE, "c1-m2", "list_agreements_internal") or []
     terms: dict[str, set[str]] = {}
-    for agreement in agreements:
+    for agreement in gateways.agreements():
         if agreement.get("scope") != "COMPANY_ROLE":
             continue
         for role in agreement.get("companyRoles") or []:
@@ -332,7 +297,7 @@ def activate_company(input: dict) -> dict:
             raise errors.conflict(detail="application does not match",
                           retryable=False)
 
-        application = _application(application_id)
+        application = gateways.application(application_id)
         terms = _terms_of_roles()
         given = {consent.get("agreementKey"): consent for consent in application.get("consents") or []}
         active, pending = [], []
@@ -510,12 +475,7 @@ def correct_company(companyId: str, body: dict, sub: str | None = None) -> dict:
 # ------------------------------------------------------------------------------ company roles (7.7 - 7.9)
 def _terms() -> list[dict]:
     """Active terms of C1-M2 with scope COMPANY_ROLE (11.1); unreachable stays 502."""
-    config.apply_registration_url()
-    if neighbours.is_standin("c1-m2"):
-        agreements = testdata.agreements()
-    else:
-        agreements = neighbours.query(MODULE, "c1-m2", "list_agreements_internal") or []
-    return [agreement for agreement in agreements if agreement.get("scope") == "COMPANY_ROLE"]
+    return [agreement for agreement in gateways.agreements() if agreement.get("scope") == "COMPANY_ROLE"]
 
 
 def _role_state(company: str, lang: str) -> list[dict]:
@@ -1101,7 +1061,7 @@ def reactivate_company(input: dict) -> dict:
         if row["status"] != "INACTIVE":
             raise errors.invalid_state(detail=row["status"], retryable=False)
 
-        application = _application(application_id)
+        application = gateways.application(application_id)
         if application.get("companyId") != cid:
             raise errors.conflict(detail="application has another companyId",
                           retryable=False)
