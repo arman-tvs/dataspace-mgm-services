@@ -99,76 +99,20 @@ def reactivate_company(input: dict) -> dict:
         if row["status"] != "INACTIVE":
             raise errors.invalid_state(detail=row["status"], retryable=False)
 
-        application = gateways.application(application_id)
-        if application.get("companyId") != cid:
-            raise errors.conflict(detail="application has another companyId",
-                          retryable=False)
-        expected = "TRANSFER" if row["deactivation_reason"] == "TRANSFERRED" else "REACTIVATION"
-        if application.get("kind") != expected:
-            raise errors.invalid_state(detail=f"kind {application.get('kind')} does not match the reason",
-                          retryable=False)
-        # C12 calls this step after ApplicationApproved and before complete-application (flows
-        # `reactivation` and `return`), so C1-M2 still has the application SUBMITTED; a repetition
-        # after the flow may find it COMPLETED. C1-M2's ApplicationStatus has no APPROVED: the
-        # approval is C1-M3's (C1-M2 openapi ApplicationStatus; OPEN-QUESTIONS 12).
-        if application.get("status") not in ("SUBMITTED", "COMPLETED"):
-            raise errors.invalid_state(detail=f"application {application.get('status')}", retryable=False)
-
+        application = _reactivation_application(cid, application_id, row)
         data = application.get("companyData") or {}
-        source_address = data.get("address") or {}
         verification = application.get("verification")
-        fields = {"name": data.get("legalName"), "short_name": data.get("shortName"),
-                  "street": source_address.get("streetName"),
-                  "house_number": source_address.get("streetNumber"),
-                  "postal_code": source_address.get("postalCode"), "city": source_address.get("city"),
-                  "region": source_address.get("region"),
-                  "country_code": source_address.get("countryCode")}
-        if verification == "EBW" and validation.same_value(row["name"], data.get("legalName")):
-            fields["name"] = row["name"]   # 6.3: an equal value keeps its stored spelling
-        mismatched = []
-        if fields["country_code"] != row["country_code"]:
-            mismatched.append("countryCode")
+        fields = _reactivated_fields(row, data, verification)
         stored = {entry["type"]: entry for entry in store.list_identifiers(cid)}
-        if verification == "EBW":
-            claimed_ebwoid = next((entry["value"] for entry in data.get("identifiers") or []
-                                   if entry.get("type") == "EBWOID"), None)
-            if validation.value_normalized(claimed_ebwoid or "") != \
-                    (stored.get("EBWOID") or {}).get("value_normalized"):
-                mismatched.append("EBWOID")
-        if mismatched:
-            raise errors.company_mismatch(fields=mismatched, retryable=False)
-
-        identifiers = list(stored.values())
-        for entry in data.get("identifiers") or []:
-            if entry.get("type") == "EBWOID":
-                continue
-            if verification == "EBW":
-                if entry.get("type") not in CORE_IDENTIFIERS:
-                    continue
-                wallet = (stored.get(entry["type"]) or {}).get("source") == "BUSINESS_WALLET"
-                source = "BUSINESS_WALLET" if wallet else "DECLARED"
-            else:
-                wallet = (stored.get(entry["type"]) or {}).get("source") == "BUSINESS_WALLET"
-                source = "BUSINESS_WALLET" if wallet else "DECLARED"
-            identifiers = [item for item in identifiers if item["type"] != entry["type"]]
-            identifiers.append({"type": entry["type"], "value": entry["value"], "source": source})
-        identifiers = [{"type": entry["type"], "value": entry["value"], "source": entry["source"]}
-                       for entry in identifiers]
+        _check_same_company(row, fields, data, verification, stored)
+        identifiers = _reactivated_identifiers(stored, data, verification)
 
         invalid = validation.validate_company(fields)
         invalid += validation.validate_identifiers(identifiers, fields["country_code"])
         if invalid:
             raise errors.validation(errors=invalid, retryable=False)
 
-        attestation_claims = application.get("attestation") or {}
-        updates = dict(fields)
-        updates |= {"status": "ACTIVE", "deactivation_reason": None, "reactivated_at": _now()}
-        if verification == "EBW":
-            updates |= {"core_data_source": "EBW",
-                        "core_data_verified_at": attestation_claims.get("verifiedAt"),
-                        "verification_ref": attestation_claims.get("attestationId")}
-        else:
-            updates |= {"core_data_source": "MANUAL", "core_data_verified_at": _now()}
+        updates = _reactivation_updates(fields, verification, application.get("attestation") or {})
         changed = _changed_fields(row, fields, identifiers)
         store.update_company(cid, **updates)
         store.set_identifiers(cid, identifiers)
@@ -184,3 +128,79 @@ def reactivate_company(input: dict) -> dict:
                        {"companyId": cid, "bpn": row["bpn"], "companyRoles": roles})
     return standin.step_reply(input, {"companyId": cid, "status": "ACTIVE", "bpn": row["bpn"],
                                       "companyRoles": roles, "changedFields": changed})
+
+
+def _reactivation_application(cid: str | None, application_id: str | None, row: dict) -> dict:
+    """The approved application of 8.6, of the kind that matches the deactivation reason."""
+    application = gateways.application(application_id)
+    if application.get("companyId") != cid:
+        raise errors.conflict(detail="application has another companyId", retryable=False)
+    expected = "TRANSFER" if row["deactivation_reason"] == "TRANSFERRED" else "REACTIVATION"
+    if application.get("kind") != expected:
+        raise errors.invalid_state(detail=f"kind {application.get('kind')} does not match the reason",
+                                   retryable=False)
+    # C12 calls this step after ApplicationApproved and before complete-application (flows
+    # `reactivation` and `return`), so C1-M2 still has the application SUBMITTED; a repetition
+    # after the flow may find it COMPLETED. C1-M2's ApplicationStatus has no APPROVED: the
+    # approval is C1-M3's (C1-M2 openapi ApplicationStatus; OPEN-QUESTIONS 12).
+    if application.get("status") not in ("SUBMITTED", "COMPLETED"):
+        raise errors.invalid_state(detail=f"application {application.get('status')}", retryable=False)
+    return application
+
+
+def _reactivated_fields(row: dict, data: dict, verification: object) -> dict:
+    """The core data of the application, in the columns of README 5."""
+    source_address = data.get("address") or {}
+    fields = {"name": data.get("legalName"), "short_name": data.get("shortName"),
+              "street": source_address.get("streetName"),
+              "house_number": source_address.get("streetNumber"),
+              "postal_code": source_address.get("postalCode"), "city": source_address.get("city"),
+              "region": source_address.get("region"),
+              "country_code": source_address.get("countryCode")}
+    if verification == "EBW" and validation.same_value(row["name"], data.get("legalName")):
+        fields["name"] = row["name"]   # 6.3: an equal value keeps its stored spelling
+    return fields
+
+
+def _check_same_company(row: dict, fields: dict, data: dict, verification: object, stored: dict) -> None:
+    """409 `company-mismatch` when the country, or with EBW the EBWOID, is not the company's."""
+    mismatched = []
+    if fields["country_code"] != row["country_code"]:
+        mismatched.append("countryCode")
+    if verification == "EBW":
+        claimed_ebwoid = next((entry["value"] for entry in data.get("identifiers") or []
+                               if entry.get("type") == "EBWOID"), None)
+        if validation.value_normalized(claimed_ebwoid or "") != \
+                (stored.get("EBWOID") or {}).get("value_normalized"):
+            mismatched.append("EBWOID")
+    if mismatched:
+        raise errors.company_mismatch(fields=mismatched, retryable=False)
+
+
+def _reactivated_identifiers(stored: dict, data: dict, verification: object) -> list[dict]:
+    """The stored identifiers with those of the application; with EBW only the core identifiers change."""
+    identifiers = list(stored.values())
+    for entry in data.get("identifiers") or []:
+        if entry.get("type") == "EBWOID":
+            continue
+        if verification == "EBW" and entry.get("type") not in CORE_IDENTIFIERS:
+            continue
+        wallet = (stored.get(entry["type"]) or {}).get("source") == "BUSINESS_WALLET"
+        source = "BUSINESS_WALLET" if wallet else "DECLARED"
+        identifiers = [item for item in identifiers if item["type"] != entry["type"]]
+        identifiers.append({"type": entry["type"], "value": entry["value"], "source": source})
+    return [{"type": entry["type"], "value": entry["value"], "source": entry["source"]}
+            for entry in identifiers]
+
+
+def _reactivation_updates(fields: dict, verification: object, attestation_claims: dict) -> dict:
+    """The columns to write: the core data, ACTIVE, and the source of the core data (6.3)."""
+    updates = dict(fields)
+    updates |= {"status": "ACTIVE", "deactivation_reason": None, "reactivated_at": _now()}
+    if verification == "EBW":
+        updates |= {"core_data_source": "EBW",
+                    "core_data_verified_at": attestation_claims.get("verifiedAt"),
+                    "verification_ref": attestation_claims.get("attestationId")}
+    else:
+        updates |= {"core_data_source": "MANUAL", "core_data_verified_at": _now()}
+    return updates
