@@ -44,7 +44,7 @@ import jwt
 from portal_common import http
 from portal_common.problems import Problem
 
-from . import config
+from . import config, errors
 
 MODULE = "c3-m1"
 TYP = "ebw-attestation+jwt"
@@ -63,7 +63,7 @@ def reset() -> None:
 
 
 def _invalid(reason: str, detail: str | None = None) -> Problem:
-    return Problem(MODULE, 400, "attestation-invalid", reason=reason, detail=detail)
+    return errors.attestation_invalid(reason=reason, detail=detail)
 
 
 def _b64(part: str) -> bytes:
@@ -77,8 +77,7 @@ def _load_keys() -> list[dict]:
         try:
             return json.loads(file.read_text(encoding="utf-8")).get("keys") or []
         except (OSError, ValueError) as error:
-            raise Problem(MODULE, 502, "upstream-error",
-                          detail=f"JWKS file unreadable: {error}", retryable=True) from error
+            raise errors.upstream_error(detail=f"JWKS file unreadable: {error}", retryable=True) from error
     now = time.monotonic()
     if _cache["keys"] and now - float(_cache["fetched_at"]) < config.attestation_jwks_cache_seconds():
         return _cache["keys"]
@@ -88,8 +87,7 @@ def _load_keys() -> list[dict]:
         response.raise_for_status()
         keys = response.json().get("keys") or []
     except (httpx.HTTPError, ValueError) as error:
-        raise Problem(MODULE, 502, "upstream-error",
-                      detail=f"JWKS not reachable: {error}", retryable=True) from error
+        raise errors.upstream_error(detail=f"JWKS not reachable: {error}", retryable=True) from error
     _cache.update({"keys": keys, "fetched_at": now})
     return keys
 

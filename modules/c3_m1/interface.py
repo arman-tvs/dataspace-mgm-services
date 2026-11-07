@@ -42,7 +42,7 @@ from portal_common import events, neighbours, standin
 from portal_common.problems import Problem
 from tools import testdata
 
-from . import attestation, config, store, validation
+from . import attestation, config, errors, store, validation
 
 MODULE = "c3-m1"
 
@@ -102,7 +102,7 @@ def reset() -> None:
 def get_company(cid: str | None) -> dict:
     row = store.get_company(cid)
     if row is None:
-        raise Problem(MODULE, 404, "not-found", retryable=False)
+        raise errors.not_found(retryable=False)
     return row
 
 
@@ -189,7 +189,7 @@ def _application(application_id: str | None) -> dict:
     if neighbours.is_standin("c1-m2"):
         application = _stub_applications().get(application_id or "")
         if application is None:
-            raise Problem(MODULE, 404, "not-found", detail="application unknown", retryable=False)
+            raise errors.not_found(detail="application unknown", retryable=False)
         return application
     try:
         application = neighbours.query(MODULE, "c1-m2", "get_application_internal",
@@ -197,7 +197,7 @@ def _application(application_id: str | None) -> dict:
     except Problem:
         raise
     if not application:
-        raise Problem(MODULE, 404, "not-found", detail="application unknown", retryable=False)
+        raise errors.not_found(detail="application unknown", retryable=False)
     return application
 
 
@@ -210,19 +210,18 @@ def create_company(input: dict) -> dict:
             return standin.step_reply(input, {"companyId": cid, "status": existing["status"],
                                               "bpn": existing["bpn"],
                                               "coreDataSource": existing["core_data_source"]})
-        raise Problem(MODULE, 409, "conflict", detail="company belongs to another application",
+        raise errors.conflict(detail="company belongs to another application",
                       retryable=False)
 
     application = _application(application_id)
     if application.get("companyId") != cid:
-        raise Problem(MODULE, 409, "conflict", detail="application has another companyId",
+        raise errors.conflict(detail="application has another companyId",
                       retryable=False)
     if application.get("kind") == "REACTIVATION":
-        raise Problem(MODULE, 409, "conflict", detail="reactivation uses reactivate-company",
+        raise errors.conflict(detail="reactivation uses reactivate-company",
                       retryable=False)
     if application.get("status") not in ("SUBMITTED", "APPROVED"):
-        raise Problem(MODULE, 409, "invalid-state",
-                      detail=f"application {application.get('status')}", retryable=False)
+        raise errors.invalid_state(detail=f"application {application.get('status')}", retryable=False)
 
     data = application.get("companyData") or {}
     source_address = data.get("address") or {}
@@ -237,14 +236,14 @@ def create_company(input: dict) -> dict:
     roles = [role for role in application.get("companyRoles") or []
              if config.assignable_by(role) == "COMPANY"]
 
-    errors = validation.validate_company(row)
-    errors += validation.validate_identifiers(identifiers, row["country_code"])
+    invalid = validation.validate_company(row)
+    invalid += validation.validate_identifiers(identifiers, row["country_code"])
     for role in application.get("companyRoles") or []:
-        errors += validation.validate_company_role(role, config.role_catalogue())
+        invalid += validation.validate_company_role(role, config.role_catalogue())
     if verification == "EBW" and not any(entry["type"] == "EBWOID" for entry in identifiers):
-        errors.append({"field": "identifiers", "reason": "EBWOID required with a verification"})
-    if errors:
-        raise Problem(MODULE, 400, "validation", errors=errors, retryable=False)
+        invalid.append({"field": "identifiers", "reason": "EBWOID required with a verification"})
+    if invalid:
+        raise errors.validation(errors=invalid, retryable=False)
 
     attestation = application.get("attestation") or {}
     with store.lock(cid):
@@ -274,21 +273,21 @@ def assign_identifier(input: dict) -> dict:
     cid, raw = input.get("companyId"), input.get("bpn") or ""
     with store.lock(cid):
         row = get_company(cid)
-        errors = validation.validate_bpn(raw)
-        if errors:
-            raise Problem(MODULE, 400, "validation", errors=errors, retryable=False)
+        invalid = validation.validate_bpn(raw)
+        if invalid:
+            raise errors.validation(errors=invalid, retryable=False)
         bpn = raw.strip().upper()
         if row["bpn"]:
             if row["bpn"] == bpn:
                 return standin.step_reply(input, {"companyId": cid, "status": row["status"], "bpn": bpn})
-            raise Problem(MODULE, 409, "bpn-mismatch", detail=f"company has {row['bpn']}",
+            raise errors.bpn_mismatch(detail=f"company has {row['bpn']}",
                           retryable=False)
         if row["status"] != "REQUESTED":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"], retryable=False)
+            raise errors.invalid_state(detail=row["status"], retryable=False)
         taken = next((other for other in store.find_companies(bpn=bpn, size=5)[0]
                       if other["id"] != cid and other["status"] != "REJECTED"), None)
         if taken is not None:
-            raise Problem(MODULE, 409, "bpn-taken", detail=taken["id"], retryable=False)
+            raise errors.bpn_taken(detail=taken["id"], retryable=False)
         store.update_company(cid, bpn=bpn, bpn_assigned_at=_now())
         _audit(cid, "stepAssignIdentifier", input, {"bpn": bpn})
         events.publish(MODULE, "CompanyIdentifierAssigned", {"companyId": cid, "bpn": bpn})
@@ -326,11 +325,11 @@ def activate_company(input: dict) -> dict:
                                               "companyRoles": _active_roles(cid),
                                               "pendingCompanyRoles": []})
         if row["status"] in ("REJECTED", "INACTIVE"):
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"], retryable=False)
+            raise errors.invalid_state(detail=row["status"], retryable=False)
         if not row["bpn"]:
-            raise Problem(MODULE, 409, "identifier-missing", retryable=False)
+            raise errors.identifier_missing(retryable=False)
         if application_id != row["application_id"]:
-            raise Problem(MODULE, 409, "conflict", detail="application does not match",
+            raise errors.conflict(detail="application does not match",
                           retryable=False)
 
         application = _application(application_id)
@@ -346,7 +345,7 @@ def activate_company(input: dict) -> dict:
             else:
                 pending.append(role)
         if not active:
-            raise Problem(MODULE, 409, "roles-without-consent", missing=sorted(pending),
+            raise errors.roles_without_consent(missing=sorted(pending),
                           retryable=False)
 
         applicant = (application.get("applicant") or {}).get("sub")
@@ -378,7 +377,7 @@ def reject_company(input: dict) -> dict:
         if row["status"] == "REJECTED":
             return standin.step_reply(input, {"companyId": cid, "status": row["status"]})
         if row["status"] in ("ACTIVE", "INACTIVE"):
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"], retryable=False)
+            raise errors.invalid_state(detail=row["status"], retryable=False)
         store.update_company(cid, status="REJECTED", rejected_at=_now())
         _audit(cid, "stepRejectCompany", input)
         events.publish(MODULE, "CompanyRejected", {"companyId": cid})
@@ -428,13 +427,13 @@ def update_company(companyId: str, body: dict, sub: str | None = None) -> dict:
     with store.lock(companyId):
         row = get_company(companyId)
         if row["status"] != "ACTIVE":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"])
+            raise errors.invalid_state(detail=row["status"])
         locked = [key for key in body if validation.field_name(key) not in ("short_name",)]
         if locked:
-            raise Problem(MODULE, 409, "field-locked", fields=locked)
-        errors = validation.validate_company(body, partial=True)
-        if errors:
-            raise Problem(MODULE, 400, "validation", errors=errors)
+            raise errors.field_locked(fields=locked)
+        invalid = validation.validate_company(body, partial=True)
+        if invalid:
+            raise errors.validation(errors=invalid)
         changed = _changed_fields(row, body, None)
         if not changed:
             return company_view(companyId)
@@ -459,8 +458,8 @@ def correct_company(companyId: str, body: dict, sub: str | None = None) -> dict:
     with store.lock(companyId):
         row = get_company(companyId)
         if row["status"] in ("REJECTED", "INACTIVE"):
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"])
-        errors = validation.validate_reason(body.get("reason"))
+            raise errors.invalid_state(detail=row["status"])
+        invalid = validation.validate_reason(body.get("reason"))
         identifiers = _identifiers_from(body)
         fields = {key: value for key, value in validation.flat_fields(body).items()
                   if key not in ("reason", "identifiers")}
@@ -469,17 +468,17 @@ def correct_company(companyId: str, body: dict, sub: str | None = None) -> dict:
         if "country_code" in fields and (row["status"] != "REQUESTED" or row["bpn"]):
             locked.append("countryCode")
         if locked:
-            raise Problem(MODULE, 409, "field-locked", fields=locked)
+            raise errors.field_locked(fields=locked)
 
         if identifiers is not None:
             wallet = [{"type": entry["type"], "value": entry["value"], "source": entry["source"]}
                       for entry in store.list_identifiers(companyId)
                       if entry["source"] == "BUSINESS_WALLET"]
-            errors += validation.validate_identifiers(list(identifiers) + wallet, row["country_code"])
-            errors += _wallet_identifier_conflict(row, identifiers)
-        errors += validation.validate_company(_validate_merge(row, fields), partial=False)
-        if errors:
-            raise Problem(MODULE, 400, "validation", errors=errors)
+            invalid += validation.validate_identifiers(list(identifiers) + wallet, row["country_code"])
+            invalid += _wallet_identifier_conflict(row, identifiers)
+        invalid += validation.validate_company(_validate_merge(row, fields), partial=False)
+        if invalid:
+            raise errors.validation(errors=invalid)
 
         changed = _changed_fields(row, fields, identifiers)
         if not changed:
@@ -568,12 +567,12 @@ def add_company_role(companyId: str, body: dict, sub: str | None = None,
     with store.lock(companyId):
         row = get_company(companyId)
         if row["status"] != "ACTIVE":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"])
-        errors = validation.validate_company_role(role, config.role_catalogue())
-        if errors:
-            raise Problem(MODULE, 400, "validation", errors=errors)
+            raise errors.invalid_state(detail=row["status"])
+        invalid = validation.validate_company_role(role, config.role_catalogue())
+        if invalid:
+            raise errors.validation(errors=invalid)
         if config.assignable_by(role) != "COMPANY":
-            raise Problem(MODULE, 409, "role-not-assignable")
+            raise errors.role_not_assignable()
         if store.role_status(companyId, role) == "ACTIVE":
             return _role_state(companyId, lang or "en")
 
@@ -581,11 +580,11 @@ def add_company_role(companyId: str, body: dict, sub: str | None = None,
         given = {consent.get("agreementKey"): consent for consent in body.get("consents") or []}
         missing = sorted(key for key in terms if (given.get(key) or {}).get("version") != terms[key]["version"])
         if missing:
-            raise Problem(MODULE, 400, "consent-missing", missing=missing)
+            raise errors.consent_missing(missing=missing)
         foreign = sorted(set(given) - set(terms))
         if foreign:
-            raise Problem(MODULE, 400, "validation",
-                          errors=[{"field": "consents", "reason": f"not a term of {role}: {', '.join(foreign)}"}])
+            reason = f"not a term of {role}: {', '.join(foreign)}"
+            raise errors.validation(errors=[{"field": "consents", "reason": reason}])
 
         now = _now()
         for key in terms:
@@ -604,17 +603,17 @@ def remove_company_role(companyId: str, companyRole: str, sub: str | None = None
     with store.lock(companyId):
         row = get_company(companyId)
         if row["status"] != "ACTIVE":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"])
+            raise errors.invalid_state(detail=row["status"])
         if companyRole not in config.role_catalogue():
-            raise Problem(MODULE, 404, "not-found")
+            raise errors.not_found()
         if config.assignable_by(companyRole) != "COMPANY":
-            raise Problem(MODULE, 409, "role-not-assignable")
+            raise errors.role_not_assignable()
         if store.role_status(companyId, companyRole) != "ACTIVE":
             return _role_state(companyId, lang or "en")
         remaining = [role for role, status in store.list_roles(companyId).items()
                      if status == "ACTIVE" and role != companyRole and config.assignable_by(role) == "COMPANY"]
         if not remaining:
-            raise Problem(MODULE, 409, "last-role")
+            raise errors.last_role()
 
         store.remove_role(companyId, companyRole)
         for term in _terms_of(companyRole, _terms()).values():
@@ -650,7 +649,7 @@ def list_companies(*, status: list[str] | str | None = None, name: str | None = 
             status=status, name=name, bpn=bpn, has_bpn=has_bpn, company_role=companyRole,
             core_data_source=coreDataSource, page=int(page or 0), size=int(size or 20))
     except ValueError as error:
-        raise Problem(MODULE, 400, "validation", errors=[{"field": "filter", "reason": str(error)}])
+        raise errors.validation(errors=[{"field": "filter", "reason": str(error)}])
     return {"items": [_summary(row) for row in items], "page": int(page or 0),
             "size": int(size or 20), "total": total}
 
@@ -732,46 +731,45 @@ def create_change_request(companyId: str, data: dict,
                           sub: str | None = None) -> dict:
     """7.4: a change request with supporting documents."""
     if not config.change_requests_enabled():
-        raise Problem(MODULE, 409, "change-requests-disabled")
+        raise errors.change_requests_disabled()
     with store.lock(companyId):
         row = get_company(companyId)
         if row["status"] != "ACTIVE":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"])
+            raise errors.invalid_state(detail=row["status"])
         if store.open_change_request(companyId):
-            raise Problem(MODULE, 409, "change-request-open")
+            raise errors.change_request_open()
 
         changes = {key: value for key, value in data.items() if key in ("name", "address", "identifiers")}
         identifiers = changes.get("identifiers")
         wallet = [{"type": entry["type"], "value": entry["value"], "source": entry["source"]}
                   for entry in store.list_identifiers(companyId) if entry["source"] == "BUSINESS_WALLET"]
-        errors = validation.validate_change_request(data, row["country_code"])
+        invalid = validation.validate_change_request(data, row["country_code"])
         if identifiers is not None:
             if not identifiers and wallet:
                 # "afterwards at least one identifier" counts the wallet identifiers that stay
-                errors = [error for error in errors
+                invalid = [error for error in invalid
                           if not (error["field"] == "identifiers" and error["reason"] == "missing")]
-            errors += _wallet_identifier_conflict(row, identifiers)
-        if errors:
-            raise Problem(MODULE, 400, "validation", errors=errors)
+            invalid += _wallet_identifier_conflict(row, identifiers)
+        if invalid:
+            raise errors.validation(errors=invalid)
         core_changed = any(_differs_field(row, key, value)
                            for key, value in changes.items() if key != "identifiers")
         if identifiers is not None and _identifier_core_changed(row, identifiers):
             core_changed = True
         if core_changed and row["core_data_source"] == "EBW":
-            raise Problem(MODULE, 409, "attestation-required")
+            raise errors.attestation_required()
         if not _changes_differs(row, changes):
-            raise Problem(MODULE, 400, "validation",
-                          errors=[{"field": "changes", "reason": "no change"}])
+            raise errors.validation(errors=[{"field": "changes", "reason": "no change"}])
 
-        errors = []
+        invalid = []
         if not 1 <= len(documents) <= config.change_request_max_documents():
-            errors.append({"field": "documents", "reason": "1 to %d documents"
+            invalid.append({"field": "documents", "reason": "1 to %d documents"
                                                           % config.change_request_max_documents()})
         for file_name, content, stated in documents:
-            errors += validation.validate_document(file_name, content, stated_media_type=stated,
+            invalid += validation.validate_document(file_name, content, stated_media_type=stated,
                                                    max_bytes=config.change_request_max_document_bytes())
-        if errors:
-            raise Problem(MODULE, 400, "document-invalid", errors=errors)
+        if invalid:
+            raise errors.document_invalid(errors=invalid)
 
         created = store.create_change_request({
             "company_id": companyId, "changes": changes, "comment": data.get("comment"),
@@ -799,7 +797,7 @@ def list_own_change_requests(companyId: str, page: int = 0, size: int = 20) -> d
 def _own_change_request(companyId: str, changeRequestId: str) -> dict:
     row = store.get_change_request(changeRequestId)
     if row is None or row["company_id"] != companyId:
-        raise Problem(MODULE, 404, "not-found")
+        raise errors.not_found()
     return row
 
 
@@ -810,7 +808,7 @@ def withdraw_change_request(companyId: str, changeRequestId: str, sub: str | Non
         if row["status"] == "WITHDRAWN":
             return _change_request_view(row)
         if row["status"] != "OPEN":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"])
+            raise errors.invalid_state(detail=row["status"])
         closed = store.withdraw_change_request(changeRequestId)
         store.audit(companyId, sub, "withdrawChangeRequest", changeRequestId)
         events.publish(MODULE, "CompanyChangeRequestClosed",
@@ -823,7 +821,7 @@ def withdraw_change_request(companyId: str, changeRequestId: str, sub: str | Non
 def _reviewed(changeRequestId: str) -> dict:
     row = store.get_change_request(changeRequestId)
     if row is None:
-        raise Problem(MODULE, 404, "not-found")
+        raise errors.not_found()
     return row
 
 
@@ -835,7 +833,7 @@ def list_change_requests(*, status: list[str] | str | None = None,
         items, total = store.list_change_requests(status=status, company_id=companyId,
                                                   page=int(page or 0), size=int(size or 20))
     except ValueError as error:
-        raise Problem(MODULE, 400, "validation", errors=[{"field": "filter", "reason": str(error)}])
+        raise errors.validation(errors=[{"field": "filter", "reason": str(error)}])
     return {"items": [_change_request_view(item, osp=True,
                                            company=store.get_company(item["company_id"]))
                       for item in items],
@@ -860,7 +858,7 @@ def get_change_request_document(changeRequestId: str, documentId: str,
     request = _reviewed(changeRequestId)
     document = store.get_document(documentId)
     if document is None or document["change_request_id"] != changeRequestId:
-        raise Problem(MODULE, 404, "not-found")
+        raise errors.not_found()
     store.audit(request["company_id"], sub, "getChangeRequestDocument", documentId)
     return {"content": document["content"], "media_type": document["media_type"],
             "file_name": document["file_name"]}
@@ -875,18 +873,18 @@ def _apply_changes(companyId: str, row: dict, changes: dict) -> tuple[list[str],
               for entry in stored if entry["source"] == "BUSINESS_WALLET"]
     merged_identifiers = (list(identifiers) + wallet) if identifiers is not None else \
         [{"type": entry["type"], "value": entry["value"], "source": entry["source"]} for entry in stored]
-    errors = validation.validate_company(_validate_merge(row, fields), partial=False)
-    errors += validation.validate_identifiers(merged_identifiers, row["country_code"])
+    invalid = validation.validate_company(_validate_merge(row, fields), partial=False)
+    invalid += validation.validate_identifiers(merged_identifiers, row["country_code"])
     if identifiers is not None:
-        errors += _wallet_identifier_conflict(row, identifiers)
-    if errors:
-        raise Problem(MODULE, 400, "validation", errors=errors)
+        invalid += _wallet_identifier_conflict(row, identifiers)
+    if invalid:
+        raise errors.validation(errors=invalid)
 
     core_changed = any(_differs_field(row, key, value) for key, value in fields.items())
     if identifiers is not None and _identifier_core_changed(row, identifiers):
         core_changed = True
     if core_changed and row["core_data_source"] == "EBW":
-        raise Problem(MODULE, 409, "attestation-required")
+        raise errors.attestation_required()
     changed = _changed_fields(row, fields, identifiers)
     updates = validation.flat_fields(fields)
     if core_changed:
@@ -906,12 +904,12 @@ def approve_change_request(changeRequestId: str, body: dict | None = None,
         if row["status"] == "APPROVED":
             return _change_request_view(row, osp=True)
         if row["status"] != "OPEN":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"])
+            raise errors.invalid_state(detail=row["status"])
         if row["requested_by"] and row["requested_by"] == sub:
-            raise Problem(MODULE, 409, "same-person")
+            raise errors.same_person()
         company = get_company(row["company_id"])
         if company["status"] != "ACTIVE":
-            raise Problem(MODULE, 409, "invalid-state", detail=company["status"])
+            raise errors.invalid_state(detail=company["status"])
 
         changed, core_changed = _apply_changes(row["company_id"], company, row["changes"])
         decided = store.decide_change_request(changeRequestId, "APPROVED", decided_by=sub,
@@ -939,10 +937,10 @@ def decline_change_request(changeRequestId: str, body: dict | None = None,
         if row["status"] == "DECLINED":
             return _change_request_view(row, osp=True)
         if row["status"] != "OPEN":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"])
-        errors = validation.validate_decision_reason(reason)
-        if errors:
-            raise Problem(MODULE, 400, "validation", errors=errors)
+            raise errors.invalid_state(detail=row["status"])
+        invalid = validation.validate_decision_reason(reason)
+        if invalid:
+            raise errors.validation(errors=invalid)
         decided = store.decide_change_request(changeRequestId, "DECLINED", decided_by=sub,
                                               decision_reason=reason)
         store.audit(row["company_id"], sub, "declineChangeRequest", changeRequestId,
@@ -991,14 +989,14 @@ def update_company_from_attestation(companyId: str, body: dict, sub: str | None 
     with store.lock(companyId):
         row = get_company(companyId)
         if row["status"] != "ACTIVE":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"])
+            raise errors.invalid_state(detail=row["status"])
         claims = attestation.verify(body.get("attestation") or "")
         claims["client_id"] = claims.get("client_id")
 
         if store.is_used(claims["jti"]):
-            raise Problem(MODULE, 409, "attestation-used")
+            raise errors.attestation_used()
         if claims.get("representation", {}).get("confirmed") is not True:
-            raise Problem(MODULE, 409, "representation-not-confirmed")
+            raise errors.representation_not_confirmed()
         company = claims.get("company") or {}
         stored = {entry["type"]: entry for entry in store.list_identifiers(companyId)}
         mismatched = []
@@ -1007,17 +1005,17 @@ def update_company_from_attestation(companyId: str, body: dict, sub: str | None 
         if (row["country_code"] or "") != (company.get("country") or ""):
             mismatched.append("countryCode")
         if mismatched:
-            raise Problem(MODULE, 409, "company-mismatch", fields=mismatched)
+            raise errors.company_mismatch(fields=mismatched)
         verified_at = claims["_verified_at"].isoformat()
         stored_verified_at = _timestamp(row["core_data_verified_at"])
         if stored_verified_at is not None and claims["_verified_at"] <= stored_verified_at:
-            raise Problem(MODULE, 409, "attestation-outdated")
+            raise errors.attestation_outdated()
 
         fields, identifiers = _attested_values(row, claims)
-        errors = validation.validate_company(fields, partial=True)
-        errors += validation.validate_identifiers(list(identifiers.values()), row["country_code"])
-        if errors:
-            raise Problem(MODULE, 400, "validation", errors=errors)
+        invalid = validation.validate_company(fields, partial=True)
+        invalid += validation.validate_identifiers(list(identifiers.values()), row["country_code"])
+        if invalid:
+            raise errors.validation(errors=invalid)
 
         changed = _changed_fields(row, fields, list(identifiers.values()))
         updates = dict(fields)
@@ -1055,7 +1053,7 @@ def deactivate_company(input: dict) -> dict:
             return standin.step_reply(input, {"companyId": cid, "status": row["status"],
                                               "deactivationReason": row["deactivation_reason"]})
         if row["status"] != "ACTIVE":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"], retryable=False)
+            raise errors.invalid_state(detail=row["status"], retryable=False)
         _check_deactivation_reason(reason)
         store.update_company(cid, status="INACTIVE", deactivation_reason=reason,
                              deactivated_at=_now())
@@ -1069,8 +1067,7 @@ def deactivate_company(input: dict) -> dict:
 
 def _check_deactivation_reason(reason) -> None:
     if reason not in store.DEACTIVATION_REASONS:
-        raise Problem(MODULE, 400, "validation",
-                      errors=[{"field": "reason", "reason": "MANUAL or TRANSFERRED"}],
+        raise errors.validation(errors=[{"field": "reason", "reason": "MANUAL or TRANSFERRED"}],
                       retryable=False)
 
 
@@ -1081,10 +1078,10 @@ def deactivate_company_by_staff(companyId: str, body: dict, sub: str | None = No
         if row["status"] == "INACTIVE":
             return company_view(companyId, detail=True)
         if row["status"] != "ACTIVE":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"])
-        errors = validation.validate_reason(body.get("reason"))
-        if errors:
-            raise Problem(MODULE, 400, "validation", errors=errors)
+            raise errors.invalid_state(detail=row["status"])
+        invalid = validation.validate_reason(body.get("reason"))
+        if invalid:
+            raise errors.validation(errors=invalid)
         store.update_company(companyId, status="INACTIVE", deactivation_reason="MANUAL",
                              deactivated_at=_now())
         store.audit(companyId, sub, "deactivateCompany", None, {"reason": body.get("reason")})
@@ -1102,24 +1099,22 @@ def reactivate_company(input: dict) -> dict:
                                               "bpn": row["bpn"], "companyRoles": _active_roles(cid),
                                               "changedFields": []})
         if row["status"] != "INACTIVE":
-            raise Problem(MODULE, 409, "invalid-state", detail=row["status"], retryable=False)
+            raise errors.invalid_state(detail=row["status"], retryable=False)
 
         application = _application(application_id)
         if application.get("companyId") != cid:
-            raise Problem(MODULE, 409, "conflict", detail="application has another companyId",
+            raise errors.conflict(detail="application has another companyId",
                           retryable=False)
         expected = "TRANSFER" if row["deactivation_reason"] == "TRANSFERRED" else "REACTIVATION"
         if application.get("kind") != expected:
-            raise Problem(MODULE, 409, "invalid-state",
-                          detail=f"kind {application.get('kind')} does not match the reason",
+            raise errors.invalid_state(detail=f"kind {application.get('kind')} does not match the reason",
                           retryable=False)
         # C12 calls this step after ApplicationApproved and before complete-application (flows
         # `reactivation` and `return`), so C1-M2 still has the application SUBMITTED; a repetition
         # after the flow may find it COMPLETED. C1-M2's ApplicationStatus has no APPROVED: the
         # approval is C1-M3's (C1-M2 openapi ApplicationStatus; OPEN-QUESTIONS 12).
         if application.get("status") not in ("SUBMITTED", "COMPLETED"):
-            raise Problem(MODULE, 409, "invalid-state",
-                          detail=f"application {application.get('status')}", retryable=False)
+            raise errors.invalid_state(detail=f"application {application.get('status')}", retryable=False)
 
         data = application.get("companyData") or {}
         source_address = data.get("address") or {}
@@ -1143,7 +1138,7 @@ def reactivate_company(input: dict) -> dict:
                     (stored.get("EBWOID") or {}).get("value_normalized"):
                 mismatched.append("EBWOID")
         if mismatched:
-            raise Problem(MODULE, 409, "company-mismatch", fields=mismatched, retryable=False)
+            raise errors.company_mismatch(fields=mismatched, retryable=False)
 
         identifiers = list(stored.values())
         for entry in data.get("identifiers") or []:
@@ -1160,10 +1155,10 @@ def reactivate_company(input: dict) -> dict:
         identifiers = [{"type": entry["type"], "value": entry["value"], "source": entry["source"]}
                        for entry in identifiers]
 
-        errors = validation.validate_company(fields)
-        errors += validation.validate_identifiers(identifiers, fields["country_code"])
-        if errors:
-            raise Problem(MODULE, 400, "validation", errors=errors, retryable=False)
+        invalid = validation.validate_company(fields)
+        invalid += validation.validate_identifiers(identifiers, fields["country_code"])
+        if invalid:
+            raise errors.validation(errors=invalid, retryable=False)
 
         attestation_claims = application.get("attestation") or {}
         updates = dict(fields)
@@ -1212,11 +1207,9 @@ def query_companies(*, id: list[str] | str | None = None, bpn: list[str] | str |
     ids = [id] if isinstance(id, str) else list(id or [])
     bpns = [bpn] if isinstance(bpn, str) else list(bpn or [])
     if bool(ids) == bool(bpns):
-        raise Problem(MODULE, 400, "validation",
-                      errors=[{"field": "id,bpn", "reason": "exactly one of both"}])
+        raise errors.validation(errors=[{"field": "id,bpn", "reason": "exactly one of both"}])
     if len(ids + bpns) > config.query_max_companies():
-        raise Problem(MODULE, 400, "validation",
-                      errors=[{"field": "id,bpn", "reason": "too many values"}])
+        raise errors.validation(errors=[{"field": "id,bpn", "reason": "too many values"}])
     items, found = [], set()
     for wanted in ids:
         if store.get_company(wanted) is not None:
@@ -1236,22 +1229,21 @@ def find_identifier_matches(*, identifiers: list[dict], name: str | None = None,
                             statuses: list[str] | str | None = None, **_other) -> dict:
     """9.3: local duplicate search; the caller decides whether a match is a duplicate."""
     wanted_statuses = [statuses] if isinstance(statuses, str) else list(statuses or [])
-    errors = []
+    invalid = []
     if not 1 <= len(identifiers) <= 10:
-        errors.append({"field": "identifiers", "reason": "1 to 10 entries"})
+        invalid.append({"field": "identifiers", "reason": "1 to 10 entries"})
     for entry in identifiers:
         if entry.get("type") not in (*store.IDENTIFIER_TYPES, "BPN"):
-            errors.append({"field": "identifiers.type", "reason": str(entry.get("type"))})
+            invalid.append({"field": "identifiers.type", "reason": str(entry.get("type"))})
         if not entry.get("value"):
-            errors.append({"field": "identifiers.value", "reason": "required"})
+            invalid.append({"field": "identifiers.value", "reason": "required"})
     for value in wanted_statuses:
         if value not in store.STATUSES:
-            errors.append({"field": "statuses", "reason": value})
-    if errors:
-        raise Problem(MODULE, 400, "validation", errors=errors)
+            invalid.append({"field": "statuses", "reason": value})
+    if invalid:
+        raise errors.validation(errors=invalid)
     if not 1 <= len(identifiers) <= 10:
-        raise Problem(MODULE, 400, "validation",
-                      errors=[{"field": "identifiers", "reason": "1 to 10 entries"}])
+        raise errors.validation(errors=[{"field": "identifiers", "reason": "1 to 10 entries"}])
     candidates, page, total = [], 0, None
     while total is None or len(candidates) < total:
         batch, total = store.find_companies(

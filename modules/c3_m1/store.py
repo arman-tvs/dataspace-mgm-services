@@ -43,7 +43,7 @@ import importlib
 import os
 from types import ModuleType
 
-from portal_common.problems import Problem
+from . import errors
 
 MODULE = "c3-m1"
 
@@ -86,8 +86,7 @@ def backend() -> ModuleType:
     except ModuleNotFoundError as error:
         if name == "postgres" and error.name in ("psycopg", "psycopg.rows"):
             # Not part of the scaffold yet: answer like every other unimplemented operation.
-            raise Problem(MODULE, 501, "not-implemented",
-                          detail="DATABASE_URL is set but the PostgreSQL transport is not usable: "
+            raise errors.not_implemented(detail="DATABASE_URL is set but the PostgreSQL transport is not usable: "
                                  "install `psycopg[binary]` (see OPEN-QUESTIONS.md 1 and 2)") from error
         raise
     _cache = (name, module)

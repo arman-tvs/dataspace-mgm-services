@@ -35,9 +35,8 @@ import json
 from fastapi import Body, File, Form, Query, Response, UploadFile
 
 from portal_common import standin
-from portal_common.problems import Problem
 
-from . import interface
+from . import errors, interface
 from .interface import MODULE, company_view, role_view
 
 router = standin.router(MODULE)
@@ -171,8 +170,7 @@ def create_change_request(companyId: str, data: str = Form(...),
     try:
         parsed = json.loads(data)
     except ValueError as error:
-        raise Problem(MODULE, 400, "validation",
-                      errors=[{"field": "data", "reason": f"not JSON: {error}"}]) from error
+        raise errors.validation(errors=[{"field": "data", "reason": f"not JSON: {error}"}]) from error
     files = [(upload.filename or "", upload.file.read(), upload.content_type) for upload in documents]
     return interface.create_change_request(companyId, parsed, files, claims.get("sub"))
 
