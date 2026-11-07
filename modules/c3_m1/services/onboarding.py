@@ -186,7 +186,7 @@ def activate_company(input: dict) -> dict:
                                       "companyRoles": sorted(active), "pendingCompanyRoles": pending})
 
 
-def _roles_with_consent(cid: str, terms: dict[str, set[str]], given: dict) -> tuple[list[str], list[str]]:
+def _roles_with_consent(cid: str | None, terms: dict[str, set[str]], given: dict) -> tuple[list[str], list[str]]:
     """The REQUESTED roles whose terms all have a consent in the application, and the others."""
     active, pending = [], []
     for role, status in store.list_roles(cid).items():
@@ -200,7 +200,7 @@ def _roles_with_consent(cid: str, terms: dict[str, set[str]], given: dict) -> tu
     return active, pending
 
 
-def _take_over_roles(cid: str, application_id: str | None, application: dict, active: list[str],
+def _take_over_roles(cid: str | None, application_id: str | None, application: dict, active: list[str],
                      terms: dict[str, set[str]], given: dict) -> None:
     """The roles become ACTIVE with the consents of the application (8.3)."""
     applicant = (application.get("applicant") or {}).get("sub")

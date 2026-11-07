@@ -41,6 +41,7 @@ import copy
 import datetime as dt
 import hashlib
 import uuid
+from typing import Any
 
 from .store import (
     CHANGE_REQUEST_STATUSES,
@@ -76,7 +77,7 @@ def _copy(row: dict | None) -> dict | None:
     return copy.deepcopy(row) if row is not None else None
 
 
-def _check_enum(value, allowed: tuple[str, ...], field: str) -> None:
+def _check_enum(value: Any, allowed: tuple[str, ...], field: str) -> None:
     if value is not None and value not in allowed:
         raise ValueError(f"{field}: {value!r} is not one of {', '.join(allowed)}")
 
@@ -87,7 +88,7 @@ def _check_known(company_id: str) -> dict:
     return companies[company_id]
 
 
-def _checked_bpn(bpn, *, company_id: str | None, status: str) -> str | None:
+def _checked_bpn(bpn: Any, *, company_id: str | None, status: str) -> str | None:
     """Upper case and unique among the companies whose status is not `REJECTED` (README 5)."""
     if bpn in (None, ""):
         return None
@@ -177,8 +178,9 @@ def update_company(company_id: str, **fields) -> dict | None:
     return _copy(row)
 
 
-def find_companies(*, status=None, name=None, bpn=None, has_bpn=None, company_role=None,
-                   core_data_source=None, page: int = 0, size: int = 20) -> tuple[list[dict], int]:
+def find_companies(*, status: Any = None, name: Any = None, bpn: Any = None, has_bpn: Any = None,
+                   company_role: Any = None, core_data_source: Any = None, page: int = 0,
+                   size: int = 20) -> tuple[list[dict], int]:
     """7.10: filters, newest first, paged. `company_role` matches active roles only."""
     statuses = [status] if isinstance(status, str) else list(status or [])
     for value in statuses:
@@ -344,7 +346,7 @@ def open_change_request(company_id: str) -> dict | None:
                  if row["company_id"] == company_id and row["status"] == "OPEN"), None)
 
 
-def list_change_requests(*, company_id: str | None = None, status=None,
+def list_change_requests(*, company_id: str | None = None, status: Any = None,
                          page: int = 0, size: int = 20,
                          newest_first: bool = False) -> tuple[list[dict], int]:
     """7.5 (newest first) and 7.14 (oldest first, the default), paged."""

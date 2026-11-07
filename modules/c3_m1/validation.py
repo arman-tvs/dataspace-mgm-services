@@ -40,6 +40,7 @@ import json
 import re
 import unicodedata
 from pathlib import Path
+from typing import Any
 
 from portal_common import settings
 
@@ -98,17 +99,17 @@ _reference_cache: tuple[str, int, dict | None] | None = None
 
 
 # ------------------------------------------------------------------------ comparison (5, 6.3)
-def normalise(value) -> str:
+def normalise(value: Any) -> str:
     """NFKC, trimmed, inner whitespace collapsed to one space; case stays (6.3)."""
     return " ".join(unicodedata.normalize("NFKC", str(value)).split())
 
 
-def value_normalized(value) -> str:
+def value_normalized(value: Any) -> str:
     """Upper case without spaces, `.`, `-` and `/` (5, 6.4) — what the duplicate search compares."""
     return NORMALISE_STRIP.sub("", unicodedata.normalize("NFKC", str(value))).upper()
 
 
-def same_value(left, right) -> bool:
+def same_value(left: Any, right: Any) -> bool:
     """Comparison of 6.3: equal after normalisation, case ignored."""
     return normalise(left).casefold() == normalise(right).casefold()
 
@@ -167,7 +168,7 @@ def _error(field: str, reason: str) -> dict:
     return {"field": field, "reason": reason}
 
 
-def _text(errors: list[dict], field: str, value, *, required: bool = False,
+def _text(errors: list[dict], field: str, value: Any, *, required: bool = False,
           min_length: int = 0, max_length: int | None = None, strip: bool = False) -> None:
     if value is None:
         if required:
@@ -238,7 +239,7 @@ def validate_company(data: dict, *, partial: bool = False) -> list[dict]:
     return errors
 
 
-def validate_country_code(country_code, *, required: bool = True) -> list[dict]:
+def validate_country_code(country_code: Any, *, required: bool = True) -> list[dict]:
     if country_code in (None, ""):
         return [_error("country_code", "required")] if required else []
     if not isinstance(country_code, str) or not COUNTRY_PATTERN.match(country_code):
@@ -281,7 +282,7 @@ def _matches(pattern: str, value: str) -> bool:
         return True
 
 
-def validate_identifiers(identifiers, country_code: str | None,
+def validate_identifiers(identifiers: Any, country_code: str | None,
                          *, allow_business_wallet: bool = True) -> list[dict]:
     """At least one identifier, at most one per type, format per country (6.4)."""
     if identifiers is None:
@@ -329,25 +330,25 @@ def validate_change_request(data: dict, country_code: str | None) -> list[dict]:
     return errors
 
 
-def validate_comment(comment) -> list[dict]:
+def validate_comment(comment: Any) -> list[dict]:
     errors: list[dict] = []
     _text(errors, "comment", comment, required=True, min_length=1, max_length=COMMENT_MAX)
     return errors
 
 
-def validate_reason(reason, *, max_length: int = REASON_MAX) -> list[dict]:
+def validate_reason(reason: Any, *, max_length: int = REASON_MAX) -> list[dict]:
     """Justification 1..500, for decisions 1..1000 (7.13, 7.18)."""
     errors: list[dict] = []
     _text(errors, "reason", reason, required=True, min_length=1, max_length=max_length)
     return errors
 
 
-def validate_decision_reason(reason) -> list[dict]:
+def validate_decision_reason(reason: Any) -> list[dict]:
     return validate_reason(reason, max_length=DECISION_REASON_MAX)
 
 
 # --------------------------------------------------------------------------- documents (5, 7.4)
-def validate_file_name(file_name) -> list[dict]:
+def validate_file_name(file_name: Any) -> list[dict]:
     errors: list[dict] = []
     _text(errors, "file_name", file_name, required=True, min_length=1, max_length=FILE_NAME_MAX)
     if isinstance(file_name, str) and ("/" in file_name or "\\" in file_name):
@@ -355,7 +356,7 @@ def validate_file_name(file_name) -> list[dict]:
     return errors
 
 
-def detect_media_type(content) -> str | None:
+def detect_media_type(content: Any) -> str | None:
     """Media type from the first bytes, `None` for anything else (README 4, 5)."""
     if not isinstance(content, (bytes, bytearray)):
         return None
@@ -368,7 +369,7 @@ def detect_media_type(content) -> str | None:
     return None
 
 
-def validate_document(file_name, content, *, stated_media_type: str | None = None,
+def validate_document(file_name: Any, content: Any, *, stated_media_type: str | None = None,
                       max_bytes: int | None = None) -> list[dict]:
     """File name rules and type from the bytes; `stated_media_type` is ignored on purpose."""
     del stated_media_type
@@ -387,7 +388,7 @@ def validate_document(file_name, content, *, stated_media_type: str | None = Non
 
 
 # --------------------------------------------------------------------------------- misc (6.5)
-def validate_company_role(company_role, catalogue: dict | None = None) -> list[dict]:
+def validate_company_role(company_role: Any, catalogue: dict | None = None) -> list[dict]:
     """Role must be in the catalogue (7.8, 7.9)."""
     if not company_role:
         return [_error("companyRole", "required")]
@@ -396,13 +397,13 @@ def validate_company_role(company_role, catalogue: dict | None = None) -> list[d
     return []
 
 
-def validate_media_type(media_type) -> list[dict]:
+def validate_media_type(media_type: Any) -> list[dict]:
     if media_type not in MEDIA_TYPES:
         return [_error("media_type", "unknown")]
     return []
 
 
-def validate_bpn(bpn) -> list[dict]:
+def validate_bpn(bpn: Any) -> list[dict]:
     if not isinstance(bpn, str) or not BPN_PATTERN.match(bpn.upper()):
         return [_error("bpn", "format")]
     return []
