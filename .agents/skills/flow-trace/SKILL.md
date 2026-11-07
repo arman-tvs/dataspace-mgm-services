@@ -36,7 +36,7 @@ steps with preconditions, and an event moves the process on. This skill reads `f
 specs and the event catalogue, so a question like "why is my company still `REQUESTED`" gets an exact answer.
 
 ```bash
-F=.claude/skills/flow-trace/scripts/flow-trace.py
+F=.agents/skills/flow-trace/scripts/flow-trace.py
 $F list                         # 25 flows: trigger (with condition), subject, steps, early end
 $F show onboarding              # step by step: module, condition, waitFor, completesOn/failsOn, every input source
 $F module c3-m2                 # every step of C3-M2 in every flow, the lookups that query it, flows its events start

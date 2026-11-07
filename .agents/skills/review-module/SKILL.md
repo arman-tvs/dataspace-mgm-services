@@ -50,11 +50,22 @@ and 7a first. Do not change code during the review. Report what you find.
     codes. Steps are tested twice with the same input.
 13. **Silent failures:** no `except` that hides an error, no success result with empty content
     (for example a step `DONE` without the object it should create).
-14. **Checks run:** `uv run pytest -q` and `uv run python demo.py` pass. Run both and report the
-    result. If one fails, decide first whether the module or the kit (`demo.py`, a kit test, a
-    stand-in) contradicts the spec, and quote the spec section.
+14. **Checks run:** `uv run pytest -q`, `uv run python demo.py` and
+    `uv run python tools/quality/gate.py` pass. Run all three and report the result. If one fails,
+    decide first whether the module or the kit (`demo.py`, a kit test, a stand-in) contradicts the
+    spec, and quote the spec section.
 15. **Open questions:** points where the code chooses a reading of an unclear spec are listed in
     `modules/<id>/OPEN-QUESTIONS.md`.
+16. **Layers (ADR-0003, `AGENTS.md` "Inside a module"):** `interface.py` only delegates; the rules
+    are in the service, data in the store behind a `Protocol`, neighbour calls in `gateways.py`,
+    external systems in `adapters/` behind a `Protocol`, every `Problem` built in `errors.py`.
+    Imports point down only; service and store import no `fastapi` or `pydantic`.
+17. **Data:** dataclasses inside, Pydantic only in `schemas.py`, `dict` only at `interface.py`;
+    camelCase only at the edges. No `dict[str, Any]` passed between service and store.
+18. **Readability:** files under 500 lines, functions under 60 lines and a complexity of 10, type
+    hints on every function; names that say what a thing is; no duplicated logic (the same mapping
+    or check written twice); comments that explain why, with the spec section. The gate counts the
+    first three; judge the rest by reading.
 
 ## Output
 
@@ -63,5 +74,5 @@ Return a findings list, most severe first. One line per finding:
 `<severity> | <checklist no.> | <file>:<line> | <what is wrong> | <spec reference> | <proposed fix>`
 
 Severity: `blocker` (breaks the merge or a flow), `high` (wrong behaviour), `medium`, `low`.
-End with the result of `uv run pytest -q` and `uv run python demo.py` and the number of findings
-per severity. If there are no findings for a checklist item, do not list it.
+End with the result of `uv run pytest -q`, `uv run python demo.py` and
+`uv run python tools/quality/gate.py`, and the number of findings per severity. If there are no findings for a checklist item, do not list it.

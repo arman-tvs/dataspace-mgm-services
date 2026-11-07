@@ -94,7 +94,7 @@ def find_spec(kind: str = "backend", required: bool = True) -> Path | None:
     if required:
         sys.exit(f"The {kind} spec was not found. Looked in: "
                  + ", ".join(str(p) for p in _candidates(kind))
-                 + "\nFetch it once with:  .claude/skills/portal-spec-sources/scripts/spec-src.py sync")
+                 + "\nFetch it once with:  .agents/skills/portal-spec-sources/scripts/spec-src.py sync")
     return None
 
 

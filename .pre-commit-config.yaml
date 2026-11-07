@@ -34,6 +34,6 @@ repos:
         name: quality gate (tools/quality/gate.py)
         entry: uv run python tools/quality/gate.py
         language: system
-        types: [python]
+        # every file: the gate picks the areas it checks (Python code and the agent files)
         pass_filenames: true
         require_serial: true

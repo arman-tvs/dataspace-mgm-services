@@ -36,10 +36,10 @@ break on changes outside the team's folder, field names, own error formats and s
 way a Tractus-X committer reads it, before the merge window.
 
 ```bash
-G=.claude/skills/merge-guard/scripts/merge-guard.py
+G=.agents/skills/merge-guard/scripts/merge-guard.py
 $G                                  # against origin/main (upstream/main if that remote exists), module inferred
 $G origin/main --module c3_m1       # name the team module explicitly
-$G --run                            # also: uv run pytest -q, then uv run python demo.py (definition of done)
+$G --run                            # also: pytest, demo.py and the quality gate (definition of done)
 $G --strict                         # exit 1 on a blocker or high finding
 ```
 
@@ -69,7 +69,8 @@ The ECA check itself runs on the PR (Eclipse bot); the script cannot see the Ecl
 
 1. Fix every blocker and high, or explain it in the PR. A change in a shared part (`portal_common/`, `scaffold/`,
    `tools/`, `iam/`, `ebw/`, `testdata/`, `config/`) belongs in an issue, not in a team PR (AGENTS.md rule 2).
-2. Run the definition of done (`--run`), or at least `uv run pytest -q && uv run python demo.py`.
+2. Run the definition of done (`--run`), or at least `uv run pytest -q && uv run python demo.py` and
+   `uv run python tools/quality/gate.py` (ADR-0003; no new findings against `tools/quality/baseline.json`).
 3. Write the PR description with `.github/PULL_REQUEST_TEMPLATE.md` (WHAT / WHY / FURTHER NOTES / CHECKLIST), list the
    open points of `modules/<id>/OPEN-QUESTIONS.md`, and paste the findings table you did not fix with the reason.
 4. When the Captain posts it, wrap it in `docs/developers/dataspace-captain/comment-template.md`.

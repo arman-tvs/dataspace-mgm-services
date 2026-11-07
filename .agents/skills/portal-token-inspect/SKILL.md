@@ -36,7 +36,7 @@ token fails the validation, 403 when the permission is missing, and 404 when the
 person (FRAMEWORK 4.3: the object stays invisible). Three different causes, three different fixes.
 
 ```bash
-T=.claude/skills/portal-token-inspect/scripts/token-inspect.py
+T=.agents/skills/portal-token-inspect/scripts/token-inspect.py
 uv run python iam/test/get-token.py erika > /tmp/erika.jwt        # service repo: a test person's token
 $T /tmp/erika.jwt                                                  # claims + C2-M5 7.6 checks
 $T /tmp/erika.jwt --op "GET /api/c3-m1/companies/c0000002-0000-4000-8000-000000000002"

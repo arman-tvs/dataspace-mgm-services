@@ -15,9 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hackathon scaffold: all modules of the spec mounted as stand-ins, Process Orchestration (C12-M1), test Portal IAM (Keycloak), EBW stack for tests with a real wallet, `demo.py` and the setup check `check.py`.
 - Event inbox `POST /api/v1/events/inbox` (FRAMEWORK 6, OP-54): receives the CloudEvents of split-out modules in structured or binary content mode, with the token of the service account of the publishing module, and delivers each `source` and `id` once. First controller of the new `controllers/` package: one folder per API category and version, as in the Industry Core Hub backend.
 - Quality gate `tools/quality/gate.py`, the same for people and coding agents: ruff and mypy (`[tool.ruff]`, `[tool.mypy]` in `pyproject.toml`), at most 500 lines per file and 60 per function, the layers inside a module, `module-map`, the FastAPI conventions (typed bodies and responses, the spec's `operationId`) and the contract of each team module's generated OpenAPI against its `openapi.yaml`. Existing findings are frozen per area in `tools/quality/baseline.json` and may only go down. It runs in CI (`.github/workflows/quality.yml`, together with `pytest` and `demo.py --small-iam`), before each commit (`.pre-commit-config.yaml`) and after each file edit of Claude Code (`.claude/settings.json`).
+- ADR-0003 "Inside a module": layers with imports pointing down, ports only for the store and external systems, dataclasses inside, repository, gateways, error factories and adapters, balanced limits; in `AGENTS.md` ("Inside a module", "Quality gate", every skill) and in the skills `implement-module-from-spec`, `review-module` and `merge-guard`.
+- The Dataspace Captain has one source, `.agents/agents/dataspace-captain/`; `tools/agents/build.py` writes its Claude Code and GitHub Copilot files, and the quality gate fails when they differ.
 
 ### Changed
 
+- The skills moved to `.agents/skills/`, the folder that GitHub Copilot, OpenAI Codex, OpenCode, Cursor and Gemini CLI read; `.claude/skills` is a link to it for Claude Code, so existing paths keep working.
 - Events are CloudEvents 1.0 (`specversion`, `id`, `source` `urn:<module>`, `type`, `time`, `datacontenttype`, `data`) as proposed in the spec (FRAMEWORK 6, OP-54): `events.publish(module, type, data)`; the flat form `events.publish({"eventType": ...})` is deprecated; consumers read the content from `event["data"]`.
 
 ### Fixed

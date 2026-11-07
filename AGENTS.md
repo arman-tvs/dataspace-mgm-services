@@ -96,13 +96,46 @@ Core Hub backend: one folder per API category and version, one file per controll
 `POST /api/v1/events/inbox` (FRAMEWORK 6, OP-54): split-out modules deliver their CloudEvents there.
 Module APIs never go there; they stay in `modules/<id>/router.py` under `/api/<module>`.
 
+## Inside a module
+
+The spec defines the outside of a module; the inside follows
+[ADR-0003](docs/architecture/decisions/ADR-0003-inside-a-module.md). In short:
+
+| File | Job | May not import |
+|---|---|---|
+| `router.py` | HTTP only: token, permission, scope, then `interface` | service, store, gateways, adapters |
+| `schemas.py` | Pydantic request and response models of `openapi.yaml` | other layers |
+| `interface.py` | facade: the steps and queries, `dict` in and out, delegates to the service | store, gateways, adapters |
+| `service.py` (or `services/`) | rules, preconditions, idempotency; dataclasses, no `fastapi`/`pydantic` | router, interface |
+| `store.py` | repository: a `Protocol` with an in-memory and a PostgreSQL implementation | service and above |
+| `gateways.py` | one typed function per neighbour operation; the only file that imports `portal_common.neighbours` | service and above |
+| `adapters/` | external systems that are not modules, each behind a `Protocol` | service and above |
+| `errors.py` | one factory per error type of README section 12; the only file that builds `Problem(...)` | other layers |
+
+- Data: dataclasses inside, Pydantic only in `schemas.py`, `dict` only at `interface.py`; camelCase only at the edges.
+  A module that passes `dict`s may go `dict` -> `TypedDict` -> dataclass step by step.
+- Limits: at most 500 lines per file, 60 lines and a complexity of 10 per function, type hints on every function.
+- Examples in the code base: C2-M3 for the layers, C3-M2 for dataclasses and `errors.py`, C4-M2 for adapters.
+
+## Quality gate
+
+`uv run python tools/quality/gate.py` checks every rule above, plus ruff and mypy, the same way for people and every
+coding agent. Existing findings are frozen in `tools/quality/baseline.json`; the gate fails when a count goes up.
+
+- **Coding agents:** after every change run `uv run python tools/quality/gate.py --changed` and fix every finding
+  before you finish. Never raise a number in `baseline.json`, never commit with `--no-verify`.
+- **After a cleanup:** `uv run python tools/quality/gate.py --update-baseline` lowers the numbers; commit the file.
+- It also runs before each commit (`uvx pre-commit install`, once per clone), after each file edit of Claude Code
+  (`.claude/settings.json`) and in CI (`.github/workflows/quality.yml`), where it cannot be skipped.
+
 ## Definition of done
 
 1. Your module tests pass: `uv run pytest -q tests/test_<id>_*.py`.
 2. All tests pass: `uv run pytest -q`.
 3. `uv run python demo.py` ends with exit code 0.
 4. Open questions are in `modules/<id>/OPEN-QUESTIONS.md`.
-5. A pull request from the team branch `team/<n>` of the team's fork (`<fork-owner>/dataspace-mgm-services`) to `main`
+5. `uv run python tools/quality/gate.py` passes (no new findings).
+6. A pull request from the team branch `team/<n>` of the team's fork (`<fork-owner>/dataspace-mgm-services`) to `main`
    of `eclipse-tractusx/dataspace-mgm-services`, opened in the merge window at 14:45. A Tractus-X committer merges it.
 
 ## Commits
@@ -138,8 +171,23 @@ C2-M2 and C2-M3 call its Admin API with the service accounts `svc-c2-m2` and `sv
 
 ## Skills
 
-- `.claude/skills/implement-module-from-spec/SKILL.md`: build or extend your module from the spec.
-- `.claude/skills/review-module/SKILL.md`: check a module before a pull request.
+The skills live once, in `.agents/skills/<name>/SKILL.md` (with tested scripts in `scripts/`). GitHub Copilot, OpenAI
+Codex, OpenCode, Cursor and Gemini CLI load them from there, Claude Code through the link `.claude/skills`. Any other
+agent can use them too: "read `.agents/skills/<name>/SKILL.md` and follow it". Use the matching skill instead of
+improvising, and finish every skill that changes code only when the quality gate passes.
 
-The skills are plain Markdown. Claude Code loads them as skills; any other agent can use them, for
-example: "read `.claude/skills/implement-module-from-spec/SKILL.md` and follow it".
+| Skill | Use when |
+|---|---|
+| `implement-module-from-spec` | you build or extend a module from its spec |
+| `review-module` | you check a module before a pull request, or review one |
+| `merge-guard` | you check a branch before its pull request: paths, license headers, commits, secrets, the gate |
+| `module-map` | you want to know which modules are stand-ins, what a folder answers itself, call-convention findings |
+| `portal-spec-sources` | you look up a path, permission, step, query, event or section of the spec |
+| `flow-trace` | you follow a Process Orchestration flow: which step runs next, why a process waits |
+| `portal-token-inspect` | you explain a 401, 403 or 404 from a person's token |
+| `contract-seam` | you check what the UI expects against what the backend spec defines |
+| `dependencies-and-dash` | you add a dependency or the Eclipse Dash check fails |
+
+The catalog with details is `.agents/skills/README.md`. Agents: the Dataspace Captain lives once in
+`.agents/agents/dataspace-captain/`; `tools/agents/build.py` writes its Claude Code and GitHub Copilot files (do not
+edit those by hand; the gate checks them).

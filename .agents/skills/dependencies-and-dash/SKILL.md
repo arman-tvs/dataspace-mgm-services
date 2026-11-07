@@ -36,7 +36,7 @@ TRG 7.04: every third-party package must be listed in `DEPENDENCIES` and approve
 This script runs the same steps locally, so the PR does not fail on it.
 
 ```bash
-D=.claude/skills/dependencies-and-dash/scripts/dash-check.sh
+D=.agents/skills/dependencies-and-dash/scripts/dash-check.sh
 $D --list-only     # coordinates only: what is new or gone compared with DEPENDENCIES (no Java, no Dash APIs)
 $D                 # Dash like CI: licences and status, restricted/rejected, diff with DEPENDENCIES
 $D --write         # replace DEPENDENCIES with the generated file, then commit it

@@ -43,24 +43,45 @@ Read `modules/<id>/router.py` and `modules/<id>/interface.py` of the stand-in. K
 function name of `interface.py` and its signature. Other modules and Process Orchestration call
 these names. You may rewrite the bodies. Remove `STANDIN = True`.
 
+## 3a. Design the inside of the module
+
+Before you write code, list the files of the module and the job of each, following `AGENTS.md`
+"Inside a module" and ADR-0003 (`docs/architecture/decisions/ADR-0003-inside-a-module.md`):
+
+| File | What goes in for this module |
+|---|---|
+| `router.py`, `schemas.py` | the routes of step 2 and their Pydantic request and response models |
+| `interface.py` | the steps and queries of step 2, each delegating to the service |
+| `service.py` (or `services/`) | the rules of README sections 6 to 9; dataclasses for the objects of section 5 |
+| `store.py` | a repository `Protocol` for the tables of section 5, with an in-memory implementation |
+| `gateways.py` | one function per neighbour operation of section 11 |
+| `adapters/` | one `Protocol` and implementations per external system of section 11 (only if there are any) |
+| `errors.py` | one factory per error type of section 12 |
+
+Keep files under 500 lines and functions under 60 lines and a complexity of 10. Look at C2-M3
+(layers), C3-M2 (dataclasses, `errors.py`) and C4-M2 (adapters) for examples.
+
 ## 4. Implement
 
 - `interface.py`: one function per step and per query, following the call convention in
-  `AGENTS.md`:
+  `AGENTS.md`; each one only delegates to the service:
   - step: `def create_company(input: dict) -> dict`, returns
     `{"stepRunId": input["stepRunId"], "state": "DONE", "result": {...}}`;
   - query: `def get_application_internal(**params)`, parameters by their openapi names, returns
     the JSON body.
-  - Errors: `raise Problem("<module-id>", status, "<name>", detail=..., retryable=...)` with the
-    names from README section 12 and FRAMEWORK 4.5.
+  - Errors: one factory per error type in `errors.py`, e.g.
+    `def invalid_state(detail) -> Problem: return Problem("<module-id>", 409, "invalid-state", ...)`,
+    with the names from README section 12 and FRAMEWORK 4.5, then `raise errors.invalid_state(...)`.
+    `errors.py` is the only file that builds a `Problem`.
   - No token checks here. The caller in the same process has no token.
 - `router.py`: a thin HTTP layer. Create the router with `standin.router(MODULE)` (base path and
   Problem Details). Each route checks the token and the permission with `standin.perm(MODULE,
   method, path)` (or `tokens.require_spec`), checks the scope (`company`, `osp`, `own`,
   FRAMEWORK 4.3), then calls the interface function. Business logic stays out of the router.
   Provide `reset()` and, if you receive events, `on_event(event)`.
-- Own data: keep it in the module (in memory is fine for the hackathon). Clear it in `reset()`.
-  Never read or write the data of another module.
+- Own data: in `store.py`, behind a repository `Protocol` (in memory is fine for now, PostgreSQL
+  later); the service works with dataclasses, never with the store's rows as `dict`s. Clear it in
+  `reset()`. Never read or write the data of another module.
 - Steps are idempotent (FRAMEWORK 4.4): find the object by the business key from the input,
   create only what is missing, return the same result again, and publish events only when
   something changed.
@@ -75,7 +96,8 @@ these names. You may rewrite the bodies. Remove `STANDIN = True`.
 
 For every call in README section 11:
 
-- Call a neighbour with `portal_common.neighbours.query("<your-module>", "<neighbour>",
+- Call a neighbour in `gateways.py` only (one function per operation, mapping the answer to a
+  dataclass), with `portal_common.neighbours.query("<your-module>", "<neighbour>",
   "<function>", **params)`, for example `neighbours.query("c3-m1", "c1-m2",
   "get_application_internal", applicationId=app_id)`. It resolves the address as FRAMEWORK 4.7
   defines it: `in-process` → direct call of the function in `modules.<neighbour>.interface`; a
@@ -105,9 +127,11 @@ For every call in README section 11:
 uv run pytest -q tests/test_<id>_*.py
 uv run pytest -q
 uv run python demo.py
+uv run python tools/quality/gate.py --changed
 ```
 
-All three must pass. If `demo.py` fails at a step of your module, fix your module. If it fails
+All four must pass. Fix every finding of the quality gate; never raise a number in
+`tools/quality/baseline.json`. If `demo.py` fails at a step of your module, fix your module. If it fails
 in another module, open an issue and do not change that module.
 
 ## 8. Open questions
@@ -123,6 +147,8 @@ and who could decide it (another module, the spec authors). Do not decide such p
 - [ ] `interface.py` has every step and query with the names and signatures of the call
       convention; the stand-in names are kept.
 - [ ] The router only checks token, permission and scope and then calls `interface.py`.
+- [ ] The files follow `AGENTS.md` "Inside a module": `interface.py` delegates, rules in the service,
+      data in the store (dataclasses), neighbours in `gateways.py`, errors in `errors.py`.
 - [ ] Errors are `Problem` with the type names of the spec; steps always carry `retryable`.
 - [ ] Configuration variables have the names of README section 4.
 - [ ] Events are CloudEvents: the names of README section 10 in `type`, its fields in `data`
@@ -131,6 +157,6 @@ and who could decide it (another module, the spec authors). Do not decide such p
 - [ ] Steps are idempotent.
 - [ ] Imports from other modules come only from their `interface.py`.
 - [ ] Test data comes only from FRAMEWORK 7a and `testdata/`.
-- [ ] `uv run pytest -q` and `uv run python demo.py` pass.
+- [ ] `uv run pytest -q`, `uv run python demo.py` and `uv run python tools/quality/gate.py` pass.
 - [ ] `modules/<id>/OPEN-QUESTIONS.md` lists the open points.
 - [ ] Nothing outside `modules/<id>/` and `tests/test_<id>_*.py` changed.

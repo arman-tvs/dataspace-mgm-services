@@ -36,7 +36,7 @@ architecture (portal-frontend-spec) were written before the code and still diffe
 a guaranteed bug on the first integration day. This skill makes the differences visible from either repository.
 
 ```bash
-C=.claude/skills/contract-seam/scripts/seam-check.py
+C=.agents/skills/contract-seam/scripts/seam-check.py
 $C summary                       # every check that can run here, with a verdict list
 $C casing                        # JSON field names of the backend schemas against the frontend's snake_case rule
 $C errors                        # 400 Problem Details (backend) against "422 with error keys" (frontend)

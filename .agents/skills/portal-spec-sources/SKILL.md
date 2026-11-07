@@ -35,7 +35,7 @@ The spec is the contract (AGENTS.md rule 3). Every path, method, field, permissi
 configuration variable comes from it. This skill finds them fast and cites them, instead of answering from memory.
 
 ```bash
-S=.claude/skills/portal-spec-sources/scripts/spec-src.py
+S=.agents/skills/portal-spec-sources/scripts/spec-src.py
 $S where                      # which spec checkout is used, at which commit
 $S sync                       # clone or fast-forward both specs into ~/.cache/dataspace-mgm/specs
 $S modules                    # every module: base path, version, kind, operations, steps, queries

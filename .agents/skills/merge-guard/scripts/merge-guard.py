@@ -30,7 +30,8 @@ Usage: merge-guard.py [base] [--module <id>] [--run] [--strict]
 
   base          what the PR merges into (default: origin/main; upstream/main when that remote exists)
   --module id   the team's module (c3_m1); default: inferred from the changed paths under modules/
-  --run         also run the definition of done: uv run pytest -q, then uv run python demo.py
+  --run         also run the definition of done: uv run pytest -q, uv run python demo.py and the quality
+                gate (uv run python tools/quality/gate.py, ADR-0003)
   --strict      exit 1 on a blocker or high finding
 
 Checks: the paths a team may change (AGENTS.md rules 1-2), the module against its spec (module-map),
@@ -204,7 +205,8 @@ def main(argv: list[str]) -> int:
 
     rc = 0
     if "--run" in argv:
-        for cmd in (["uv", "run", "pytest", "-q"], ["uv", "run", "python", "demo.py"]):
+        for cmd in (["uv", "run", "pytest", "-q"], ["uv", "run", "python", "demo.py"],
+                    ["uv", "run", "python", "tools/quality/gate.py"]):
             print(f"\n$ {' '.join(cmd)}")
             res = subprocess.run(cmd, cwd=root)
             print(f"exit code {res.returncode}")

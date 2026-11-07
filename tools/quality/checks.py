@@ -34,6 +34,7 @@
 | `layers`, `neighbours`, `problems` | `layers.py` | the layers inside a module (ADR-0003) |
 | `module-map` | `module-map` skill | call convention, routes and configuration names against the spec |
 | `http-body`, `http-route`, `contract` | `http_layer.py` | FastAPI: typed bodies and responses, spec operationIds |
+| `agent-files` | `tools/agents/build.py` | every tool's agent file matches its source in `.agents/agents/` |
 """
 from __future__ import annotations
 
@@ -48,6 +49,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import ModuleType
 
+from tools.agents import build as agent_build
 from tools.quality import http_layer, layers
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,7 +57,8 @@ FILE_LINES = 500
 FUNCTION_LINES = 60
 CODE_AREAS = ("portal_common", "scaffold", "tools", "controllers", "iam")
 ROOT_FILES = ("demo.py", "check.py")
-MODULE_MAP = ROOT / ".claude" / "skills" / "module-map" / "scripts" / "module-map.py"
+AGENT_DIRS = (".agents/agents", ".claude/agents", ".github/agents")
+MODULE_MAP = ROOT / ".agents" / "skills" / "module-map" / "scripts" / "module-map.py"
 _MYPY_LINE = re.compile(r"^(?P<path>[^:]+\.py):(?P<line>\d+): error: (?P<message>.*)$")
 
 
@@ -70,6 +73,8 @@ class Finding:
 def area_of(path: PurePosixPath) -> str | None:
     """`modules/<id>`, a top-level code folder, `tests` or `root`; None for files the gate does not check."""
     parts = path.parts
+    if any(path.as_posix().startswith(f"{folder}/") for folder in AGENT_DIRS):
+        return "agents"
     if not parts or path.suffix != ".py":
         return None
     if parts[0] == "modules" and len(parts) > 2:
@@ -88,7 +93,7 @@ def area_paths(area: str) -> list[str]:
 def all_areas() -> list[str]:
     modules = sorted(f"modules/{p.name}" for p in (ROOT / "modules").iterdir()
                      if p.is_dir() and not p.name.startswith(("_", ".")))
-    return [*modules, *CODE_AREAS, "tests", "root"]
+    return [*modules, *CODE_AREAS, "tests", "root", "agents"]
 
 
 def python_files(areas: Iterable[str]) -> list[PurePosixPath]:
@@ -218,5 +223,14 @@ def http_findings(areas: list[str]) -> list[Finding]:
     return findings
 
 
+def agent_files(areas: list[str]) -> list[Finding]:
+    if "agents" not in areas:
+        return []
+    return [Finding("agents", "agent-files", path, "differs from .agents/agents/: edit the source there and run "
+                    "tools/agents/build.py") for path in agent_build.stale()]
+
+
 def collect(areas: list[str]) -> list[Finding]:
-    return [*ruff(areas), *mypy(areas), *sizes_and_layers(areas), *module_map(areas), *http_findings(areas)]
+    code = [a for a in areas if a != "agents"]
+    return [*ruff(code), *mypy(code), *sizes_and_layers(code), *module_map(code), *http_findings(code),
+            *agent_files(areas)]

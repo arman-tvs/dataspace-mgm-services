@@ -36,7 +36,7 @@ spec mounted from the start as a stand-in, and a team replaces exactly one folde
 module"). This skill shows, without importing or running anything, how far each folder is.
 
 ```bash
-M=.claude/skills/module-map/scripts/module-map.py
+M=.agents/skills/module-map/scripts/module-map.py
 $M                 # one row per module: kind, steps/queries answered by own code, routes in spec, tests, findings
 $M c3-m1           # details: each step and query and who answers it, each route against openapi.yaml, findings
 $M c3_m1 --strict  # exit 1 on a blocker or high finding of a team module (pre-push hook, CI)

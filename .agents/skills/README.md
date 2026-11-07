@@ -27,9 +27,10 @@
 # Dataspace Captain skills
 
 Agent skills for building the Eclipse Tractus-X Dataspace Management product. Each skill is a folder with a `SKILL.md`
-(the procedure, loaded on demand by Claude Code and GitHub Copilot from `.claude/skills/`) and a `scripts/` folder with
+(the procedure, loaded on demand from `.agents/skills/` by GitHub Copilot, OpenAI Codex, OpenCode, Cursor and Gemini CLI,
+and by Claude Code through the link `.claude/skills`) and a `scripts/` folder with
 portable, tested scripts (`python3` 3.10+ with PyYAML, `bash`; macOS and Linux). The
-[Dataspace Captain agent](../agents/dataspace-captain.md) routes matching tasks to them.
+[Dataspace Captain agent](../agents/dataspace-captain/instructions.md) routes matching tasks to them.
 
 User documentation: [how to use the Captain](../../docs/developers/dataspace-captain/README.md).
 
