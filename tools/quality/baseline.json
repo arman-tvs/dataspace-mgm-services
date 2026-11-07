@@ -75,15 +75,15 @@
     },
     "modules/c3_m1": {
       "contract": 69,
-      "file-size": 2,
-      "function-size": 3,
+      "file-size": 1,
+      "function-size": 0,
       "http-body": 14,
       "http-route": 56,
-      "layers": 1,
+      "layers": 0,
       "module-map": 1,
-      "mypy": 72,
-      "neighbours": 1,
-      "problems": 77,
+      "mypy": 47,
+      "neighbours": 0,
+      "problems": 0,
       "ruff": 17
     },
     "modules/c3_m2": {
