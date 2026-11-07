@@ -204,3 +204,11 @@ def test_the_role_catalogue_is_a_query(client, active):
     roles = {role["companyRole"]: role for role in response.json()}
     assert roles["ACTIVE_PARTICIPANT"]["assignableBy"] == "COMPANY"
     assert roles["ACTIVE_PARTICIPANT"]["description"] == "Teilnehmer am Datenaustausch"
+
+
+def test_swagger_tags_c3_m1_as_implemented_not_as_stand_in():
+    """standin.router() tags its routes "<module> (stand-in)"; the implemented C3-M1 must not show so."""
+    app = FastAPI()
+    app.include_router(c3_router.router)
+    tags = {tag for op in app.openapi()["paths"].values() for spec in op.values() for tag in spec["tags"]}
+    assert tags == {"c3-m1 Company Profile"}
