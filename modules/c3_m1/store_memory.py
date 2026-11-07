@@ -42,9 +42,20 @@ import datetime as dt
 import hashlib
 import uuid
 
-from .store import (CORE_DATA_SOURCES, CHANGE_REQUEST_STATUSES, COMPANY_FIELDS, CONSENT_SOURCE_KINDS,
-                    CONSENT_STATUSES, DEACTIVATION_REASONS, IDENTIFIER_SOURCES, IDENTIFIER_TYPES,
-                    MEDIA_TYPES, ROLE_SOURCE_KINDS, ROLE_STATUSES, STATUSES)
+from .store import (
+    CHANGE_REQUEST_STATUSES,
+    COMPANY_FIELDS,
+    CONSENT_SOURCE_KINDS,
+    CONSENT_STATUSES,
+    CORE_DATA_SOURCES,
+    DEACTIVATION_REASONS,
+    IDENTIFIER_SOURCES,
+    IDENTIFIER_TYPES,
+    MEDIA_TYPES,
+    ROLE_SOURCE_KINDS,
+    ROLE_STATUSES,
+    STATUSES,
+)
 from .validation import value_normalized
 
 companies: dict[str, dict] = {}

@@ -39,17 +39,27 @@ import datetime as dt
 import hashlib
 import json
 import os
-import zlib
 import uuid
+import zlib
 from pathlib import Path
 
 import psycopg
 from psycopg import errors
 from psycopg.rows import dict_row
 
-from .store import (CHANGE_REQUEST_STATUSES, COMPANY_FIELDS, CONSENT_STATUSES, CORE_DATA_SOURCES,
-                    DEACTIVATION_REASONS, IDENTIFIER_SOURCES, IDENTIFIER_TYPES, MEDIA_TYPES,
-                    ROLE_SOURCE_KINDS, ROLE_STATUSES, STATUSES)
+from .store import (
+    CHANGE_REQUEST_STATUSES,
+    COMPANY_FIELDS,
+    CONSENT_STATUSES,
+    CORE_DATA_SOURCES,
+    DEACTIVATION_REASONS,
+    IDENTIFIER_SOURCES,
+    IDENTIFIER_TYPES,
+    MEDIA_TYPES,
+    ROLE_SOURCE_KINDS,
+    ROLE_STATUSES,
+    STATUSES,
+)
 from .validation import value_normalized
 
 SCHEMA = Path(__file__).with_name("schema.sql")

@@ -41,6 +41,7 @@ import time
 
 import httpx
 import jwt
+
 from portal_common import http
 from portal_common.problems import Problem
 

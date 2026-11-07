@@ -229,14 +229,11 @@ def validate_company(data: dict, *, partial: bool = False) -> list[dict]:
         bpn = flat["bpn"]
         if not isinstance(bpn, str) or not BPN_PATTERN.match(bpn.upper()):
             errors.append(_error("bpn", "format"))
-    if flat.get("status") not in (None, ""):
-        if flat["status"] not in STATUSES:
+    if flat.get("status") not in (None, "") and flat["status"] not in STATUSES:
             errors.append(_error("status", "unknown"))
-    if flat.get("deactivation_reason") not in (None, ""):
-        if flat["deactivation_reason"] not in DEACTIVATION_REASONS:
+    if flat.get("deactivation_reason") not in (None, "") and flat["deactivation_reason"] not in DEACTIVATION_REASONS:
             errors.append(_error("deactivation_reason", "unknown"))
-    if flat.get("core_data_source") not in (None, ""):
-        if flat["core_data_source"] not in CORE_DATA_SOURCES:
+    if flat.get("core_data_source") not in (None, "") and flat["core_data_source"] not in CORE_DATA_SOURCES:
             errors.append(_error("core_data_source", "unknown"))
     return errors
 
