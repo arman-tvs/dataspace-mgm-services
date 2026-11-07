@@ -34,7 +34,8 @@ from fastapi import FastAPI
 
 from conftest import BASE
 from modules.c12_m1 import engine as eng
-from modules.c3_m2 import csp_client, interface
+from modules.c3_m2 import interface
+from modules.c3_m2.adapters import csp as csp_client
 from portal_common import events
 from portal_common import http as phttp
 from tools import test_iam

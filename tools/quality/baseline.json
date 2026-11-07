@@ -86,11 +86,6 @@
       "problems": 77,
       "ruff": 17
     },
-    "modules/c3_m2": {
-      "file-size": 1,
-      "layers": 2,
-      "ruff": 3
-    },
     "modules/c4_m1": {
       "contract": 17,
       "http-body": 4,

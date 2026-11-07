@@ -23,12 +23,13 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""Calls of the core services API of the CSP (README 11.1).
+"""Adapter to the core services API of the CSP (README 11.1, ADR-0003 "adapter per external system").
 
-With `CSP_URL` set, the call goes over HTTP through `portal_common.csp` (client credentials with
+With `CSP_URL` set, a request goes over HTTP through `portal_common.csp` (client credentials with
 `private_key_jwt`, README 4; timeout 10 s from `portal_common.http`). With an empty `CSP_URL`,
 the built-in stand-in of README 11.3 answers in memory, with the companies of `CSP_STUB_FILE`.
-Every call writes an audit entry (README 5) with the HTTP status and the CSP's error type only.
+The adapter knows the CSP, not the module's data: the audit entry of every call (README 5) is
+written by `services/csp_calls.py`. No answer at all raises `CspUnreachable` with the audit type.
 """
 from __future__ import annotations
 
@@ -38,16 +39,25 @@ from pathlib import Path
 from typing import Any
 
 import jwt
+from pydantic import ValidationError
 
+from modules.c3_m2 import errors
+from modules.c3_m2.schemas import CspCompanyMatch
 from portal_common import csp, settings
 from tools.csp_standin.core import CoreServices
-
-from . import errors, store
 
 CspAnswer = tuple[int, object]   # (HTTP status, JSON body or None) of one call of the core services API
 JsonObject = dict[str, Any]
 
 _builtin: CoreServices | None = None
+
+
+class CspUnreachable(Exception):
+    """No answer from the CSP; `kind` is the error type of the audit entry, the message is safe to show."""
+
+    def __init__(self, kind: str, message: str):
+        super().__init__(message)
+        self.kind = kind
 
 
 class BuiltinConfigError(Exception):
@@ -130,34 +140,29 @@ def csp_type(answer: object) -> str | None:
     return None
 
 
-def call(operation: str, method: str, path: str, body: JsonObject | None = None, params: JsonObject | None = None,
-         *, company_id: str | None = None, bpn: str | None = None) -> CspAnswer:
-    """One call of the core services API (README 11.1).
+def request(method: str, path: str, body: JsonObject | None = None, params: JsonObject | None = None) -> CspAnswer:
+    """One request to the core services API (README 11.1).
     No answer from the CSP (timeout, connection, token endpoint, unreadable signing key) and, with the
-    built-in stand-in, an unusable `CSP_STUB_FILE` or `ospCompanyFile`: 502 `upstream-error`,
-    retryable, naming the file's variable, with an audit entry (README 12; OPEN-QUESTIONS 11)."""
+    built-in stand-in, an unusable `CSP_STUB_FILE` or `ospCompanyFile`: `CspUnreachable`, naming the
+    file's variable (README 12; OPEN-QUESTIONS 11)."""
     base = os.environ.get("CSP_URL", "")
-    if base:
-        try:
-            status, answer = csp.request(base, method, path, body, params)
-        except csp.CspUnavailable as e:
-            store.record_audit(operation, company_id, bpn, None, "unavailable")
-            raise errors.upstream_error(f"CSP not reachable: {e}") from e
-        except (OSError, ValueError, jwt.PyJWTError) as e:   # OSP_SIGNING_KEY_FILE missing, no JSON or no usable key
-            store.record_audit(operation, company_id, bpn, None, "signing-key")
-            raise errors.upstream_error("the signing key of the OSP (OSP_SIGNING_KEY_FILE) is not readable") from e
-        if status == 401:
-            # The CSP refused the access token. portal_common.csp would reuse it until it expires, so
-            # every retry of C12 would fail the same way: drop it, the retry fetches a new one.
-            csp.reset()
-    else:
+    if not base:
         try:
             core = _builtin_core()
         except BuiltinConfigError as e:   # only the stand-in's own files; a settings fault stays as it is
-            store.record_audit(operation, company_id, bpn, None, e.kind)
-            raise errors.upstream_error(str(e)) from e
+            raise CspUnreachable(e.kind, str(e)) from e
         status, answer = core.dispatch(osp_id(), method, path, body, params)
-    store.record_audit(operation, company_id, bpn, int(status), csp_type(answer))
+        return int(status), answer
+    try:
+        status, answer = csp.request(base, method, path, body, params)
+    except csp.CspUnavailable as e:
+        raise CspUnreachable("unavailable", f"CSP not reachable: {e}") from e
+    except (OSError, ValueError, jwt.PyJWTError) as e:   # OSP_SIGNING_KEY_FILE missing, no JSON or no usable key
+        raise CspUnreachable("signing-key", "the signing key of the OSP (OSP_SIGNING_KEY_FILE) is not readable") from e
+    if status == 401:
+        # The CSP refused the access token. portal_common.csp would reuse it until it expires, so
+        # every retry of C12 would fail the same way: drop it, the retry fetches a new one.
+        csp.reset()
     return int(status), answer
 
 
@@ -175,3 +180,24 @@ def raise_for(status: int, answer: object, ok: tuple[int, ...] = (200, 201, 204)
     if is_business_rejection(status):
         raise errors.csp_rejected(f"the CSP rejected the call with {status}", csp_type(answer))
     raise errors.upstream_error(f"the CSP answered {status}")
+
+
+def parse_matches(answer: object, own_osp_id: str) -> list[JsonObject]:
+    """The answer of `GET /companies` as `CspCompanyMatch` objects of README 9. Checked here, so a CSP
+    answer with a missing or wrong field is 502 upstream-error both in-process and over HTTP, never a
+    500 from the response check of FastAPI."""
+    if not isinstance(answer, list):
+        raise errors.upstream_error("the CSP answered without a list")
+    if not all(isinstance(m, dict) for m in answer):
+        raise errors.upstream_error("the CSP answered a match that is not an object")
+    matches = [{"bpn": m.get("bpn"), "legalName": m.get("legalName"), "country": m.get("country"),
+                "matchedBy": m.get("matchedBy"), "homeOspId": m.get("homeOspId"), "homeOspName": m.get("homeOspName"),
+                "homeIsThisOsp": m.get("homeOspId") == own_osp_id, "memberActive": m.get("memberActive")}
+               for m in answer]
+    for match in matches:
+        try:
+            CspCompanyMatch.model_validate(match)
+        except ValidationError as e:
+            fields = ", ".join(sorted({".".join(str(x) for x in err["loc"]) for err in e.errors()}))
+            raise errors.upstream_error(f"the CSP answered a match with a missing or invalid {fields}") from e
+    return matches

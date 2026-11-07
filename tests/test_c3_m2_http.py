@@ -273,7 +273,7 @@ def test_running_step_answer_matches_step_result(api, shared_csp):
 
 # ---------------------------------------------------------------- second review (review-module, 2026-11-06)
 def test_incomplete_csp_match_is_502_not_500_over_http(api, monkeypatch):
-    from modules.c3_m2 import csp_client
+    from modules.c3_m2.services import csp_calls as csp_client
     monkeypatch.setattr(csp_client, "call", lambda *a, **k: (200, [{
         "bpn": "BPNL00000000002B", "legalName": None, "country": "DE", "matchedBy": "EBWOID", "homeOspId": OSP_B}]))
     r = api.get("/api/c3-m2/internal/find-companies", params={"ebwoid": "EBWOID-DE-0000000002"},

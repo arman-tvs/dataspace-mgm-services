@@ -345,7 +345,7 @@ def test_stub_file_entries_must_be_company_objects(tmp_path, monkeypatch):
 
 
 def test_find_companies_rejects_a_malformed_csp_answer(monkeypatch):
-    from modules.c3_m2 import csp_client
+    from modules.c3_m2.services import csp_calls as csp_client
     monkeypatch.setattr(csp_client, "call", lambda *a, **k: (200, [CSP_STUB[0], "not a match"]))
     p = problem(interface.find_companies, ebwoid=OTHER_EBWOID)
     assert (p.status, p.name, p.ext["retryable"]) == (502, "upstream-error", True)
@@ -356,7 +356,7 @@ def test_find_companies_rejects_a_malformed_csp_answer(monkeypatch):
                                     {"bpn": None}])
 def test_find_companies_rejects_an_incomplete_csp_match(monkeypatch, broken):
     """README 9: every match is a CspCompanyMatch; anything else from the CSP is 502 upstream-error."""
-    from modules.c3_m2 import csp_client
+    from modules.c3_m2.services import csp_calls as csp_client
     match = CSP_STUB[0] | {"matchedBy": "EBWOID"} | broken
     monkeypatch.setattr(csp_client, "call", lambda *a, **k: (200, [match]))
     p = problem(interface.find_companies, ebwoid=OTHER_EBWOID)
@@ -367,7 +367,7 @@ def test_find_companies_rejects_an_incomplete_csp_match(monkeypatch, broken):
 # ---------------------------------------------------------------- independent review (review-module, 2026-11-06)
 def answers_first(monkeypatch, *answers):
     """CSP answers for the next calls, in order; afterwards the built-in stand-in answers again."""
-    from modules.c3_m2 import csp_client
+    from modules.c3_m2.services import csp_calls as csp_client
     original, queue = csp_client.call, list(answers)
 
     def call(operation, method, path, body=None, params=None, **kw):
@@ -529,7 +529,7 @@ def run_twice_at_once(monkeypatch, fn, *inputs):
     their "is this new?" check before either stores its change."""
     import threading
     import time
-    from modules.c3_m2 import csp_client
+    from modules.c3_m2.services import csp_calls as csp_client
     original = csp_client.call
 
     def slow_call(*a, **k):
@@ -580,7 +580,7 @@ def test_audit_list_is_capped(monkeypatch):
 # ---------------------------------------------------------------- team re-review of #31 (2026-11-06)
 def test_broken_osp_company_file_names_its_setting(tmp_path, monkeypatch):
     """OPEN-QUESTIONS 11: the message and the audit name the file that is actually broken."""
-    from modules.c3_m2 import csp_client
+    from modules.c3_m2.adapters import csp as csp_client
     (tmp_path / "osp-company.json").write_text("{not json")
     with monkeypatch.context() as patched:   # only for this test body, not for the fixture's reset
         patched.setattr(csp_client.settings, "resolve_path", lambda value: tmp_path / "osp-company.json")
@@ -594,7 +594,7 @@ def test_broken_osp_company_file_names_its_setting(tmp_path, monkeypatch):
 
 def test_settings_fault_is_not_blamed_on_a_file(monkeypatch):
     """OPEN-QUESTIONS 11: a fault of the installation settings stays the settings' own error."""
-    from modules.c3_m2 import csp_client
+    from modules.c3_m2.adapters import csp as csp_client
 
     def no_osp_id() -> str:
         raise ValueError("setting 'ospId' is missing (FRAMEWORK 4.8)")
