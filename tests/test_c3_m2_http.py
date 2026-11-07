@@ -37,7 +37,7 @@ from fastapi.testclient import TestClient
 from conftest import BASE, bearer, person_token
 from modules.c3_m2 import interface, router, store
 from portal_common import csp as csp_client
-from portal_common import events
+from portal_common import events, standin
 from portal_common import http as phttp
 from portal_common.problems import Problem
 from portal_common.standin import derive_bpn
@@ -251,6 +251,17 @@ def test_openapi_shows_the_contract_of_the_spec(api):
     assert {"ebwoid", "euid", "identifiers", "address"} <= set(schema["properties"])
     result = op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
     assert result.endswith("/StepResult")
+
+
+def test_swagger_tags_every_c3_m2_route_as_implemented_not_as_stand_in():
+    """Mounted as `scaffold.app` does, with the spec fallback: a spec operation C3-M2 does not implement
+    would appear as "c3-m2 (stand-in)", so the only tag is C3-M2's own (#51)."""
+    app = FastAPI()
+    app.include_router(router.router)
+    app.include_router(standin.fallback_router("c3-m2", router.router))
+    tags = {tag for path, ops in app.openapi()["paths"].items() if path.startswith("/api/c3-m2")
+            for op in ops.values() for tag in op["tags"]}
+    assert tags == {"c3-m2 CSP Connection"}
 
 
 def test_running_step_answer_matches_step_result(api, shared_csp):
