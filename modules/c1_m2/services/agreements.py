@@ -53,15 +53,17 @@ def create_agreement_version(body: dict, sub: str) -> dict:
         for a in versions:
             if a["agreementKey"] == body["agreementKey"]:
                 a["status"] = "INACTIVE"
-        new = {"agreementKey": body["agreementKey"], "version": body["version"], "party": body["party"], "scope": body["scope"],
-               "companyRoles": list(body.get("companyRoles") or []), "title": body["title"], "documentUrls": body["documentUrls"],
-               "status": "ACTIVE", "reconsentRequired": body["reconsentRequired"], "reconsentDueAt": body.get("reconsentDueAt"),
+        new = {"agreementKey": body["agreementKey"], "version": body["version"], "party": body["party"],
+               "scope": body["scope"], "companyRoles": list(body.get("companyRoles") or []), "title": body["title"],
+               "documentUrls": body["documentUrls"], "status": "ACTIVE", "reconsentRequired": body["reconsentRequired"],
+               "reconsentDueAt": body.get("reconsentDueAt"),
                "createdAt": now_iso(), "createdBy": sub}
         versions.append(new)
         store.audit_log.append({"at": now_iso(), "sub": sub, "processId": None, "stepRunId": None, "companyId": None,
                           "operation": "createAgreementVersion", "applicationId": None,
                           "objectId": f"{new['agreementKey']}:{new['version']}"})
-        events.publish(MODULE, "AgreementVersionActivated", {"agreementKey": new["agreementKey"], "version": new["version"],
-                                                             "party": new["party"], "reconsentRequired": new["reconsentRequired"],
+        events.publish(MODULE, "AgreementVersionActivated", {"agreementKey": new["agreementKey"],
+                                                             "version": new["version"], "party": new["party"],
+                                                             "reconsentRequired": new["reconsentRequired"],
                                                              "reconsentDueAt": new["reconsentDueAt"]})
         return new

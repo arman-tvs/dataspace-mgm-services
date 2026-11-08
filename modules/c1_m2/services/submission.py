@@ -63,7 +63,8 @@ def replace_attestation(application_id: str, claims: dict, token: object) -> dic
         if a["status"] != "CREATED":
             raise errors.invalid_state(f"application is {a['status']}")
         store.used_jtis.add(payload["jti"])
-        a.update(companyData=data, comparison=comparison, changedAt=now_iso(), _attestation=attestation.summary(header, payload),
+        a.update(companyData=data, comparison=comparison, changedAt=now_iso(),
+                 _attestation=attestation.summary(header, payload),
                  _raw=token, _attestationClaims={"iat": payload["iat"], "exp": payload["exp"], "company": new})
         audit(a, "replaceAttestation", sub=sub)
         return public(a)
@@ -109,7 +110,8 @@ def submit_application(application_id: str, sub: str, body: dict) -> dict:
             undeclared = body.get("representationDeclared") is not True
             if missing_types or undeclared:
                 raise errors.documents_incomplete(missing_types, undeclared)
-        required = [{"agreementKey": x["agreementKey"], "version": x["version"]} for x in catalog.required(a["companyRoles"])]
+        required = [{"agreementKey": x["agreementKey"], "version": x["version"]}
+                    for x in catalog.required(a["companyRoles"])]
         given = {(c["agreementKey"], c["version"]) for c in consents}
         missing = [r for r in required if (r["agreementKey"], r["version"]) not in given]
         if missing:
@@ -119,15 +121,19 @@ def submit_application(application_id: str, sub: str, body: dict) -> dict:
         if extra:
             raise errors.validation([err("consents", f"unknown or not required terms: {k}") for k in extra])
         now = now_iso()
-        a.update(consents=[{"agreementKey": c["agreementKey"], "version": c["version"], "language": c["language"], "givenAt": now}
+        a.update(consents=[{"agreementKey": c["agreementKey"], "version": c["version"], "language": c["language"],
+                            "givenAt": now}
                            for c in consents],
                  status="SUBMITTED", submittedAt=now, changedAt=now, _requiredAgreements=required,
-                 _consentRecords=[{"agreementKey": c["agreementKey"], "version": c["version"], "language": c["language"],
+                 _consentRecords=[{"agreementKey": c["agreementKey"], "version": c["version"],
+                                   "language": c["language"],
                                    "givenAt": now, "givenBySub": sub,
-                                   "attestationId": (a.get("_attestation") or {}).get("attestationId")} for c in consents])
+                                   "attestationId": (a.get("_attestation") or {}).get("attestationId")}
+                                  for c in consents])
         if a["verification"] == "DOCUMENTS":
             a["representationDeclared"] = True
         audit(a, "submitApplication", sub=sub)
-        events.publish(MODULE, "ApplicationSubmitted", {"applicationId": a["id"], "companyId": a["companyId"], "kind": a["kind"],
+        events.publish(MODULE, "ApplicationSubmitted", {"applicationId": a["id"], "companyId": a["companyId"],
+                                                        "kind": a["kind"],
                                                         "existingCompany": a["existingCompany"], "applicantSub": sub})
         return public(a)

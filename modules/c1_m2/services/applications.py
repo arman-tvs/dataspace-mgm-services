@@ -75,7 +75,8 @@ def create_application(body: dict, claims: dict) -> tuple[dict, bool]:
             raise errors.open_application_exists(existing["id"])
         if payload and payload["jti"] in store.used_jtis:
             raise errors.attestation_used()
-        if company and any(a["companyId"] == company["id"] and a["status"] in OPEN for a in store.applications.values()):
+        if company and any(a["companyId"] == company["id"] and a["status"] in OPEN
+                           for a in store.applications.values()):
             raise errors.company_has_open_application()
         a = _new_application(body, claims, company, company_claim, given, (data, comparison), company_roles)
         if payload:
@@ -135,14 +136,16 @@ def _new_application(body: dict, claims: dict, company: dict | None, company_cla
 
 
 def list_own(sub: str, status: list[str] | None, page: int, size: int) -> dict:
-    found = sorted((a for a in store.applications.values() if a["applicant"]["sub"] == sub and (not status or a["status"] in status)),
+    found = sorted((a for a in store.applications.values()
+                    if a["applicant"]["sub"] == sub and (not status or a["status"] in status)),
                    key=lambda a: a["_seq"], reverse=True)
     return paged([summary(a) for a in found], page, size)
 
 
 def list_all(status: list[str] | None, kind: list[str] | None, verification: list[str] | None, company_id: str | None,
              page: int, size: int) -> dict:
-    found = sorted((a for a in store.applications.values() if (not status or a["status"] in status) and (not kind or a["kind"] in kind)
+    found = sorted((a for a in store.applications.values()
+                    if (not status or a["status"] in status) and (not kind or a["kind"] in kind)
                     and (not verification or a["verification"] in verification)
                     and (not company_id or a["companyId"] == company_id)), key=lambda a: a["_seq"], reverse=True)
     return paged([summary(a) for a in found], page, size)
@@ -204,6 +207,7 @@ def withdraw_application(application_id: str, sub: str) -> dict:
         a.update(status="WITHDRAWN", withdrawnAt=now, changedAt=now)
         audit(a, "withdrawApplication", sub=sub)
         if submitted:
-            events.publish(MODULE, "ApplicationWithdrawn", {"applicationId": a["id"], "companyId": a["companyId"], "kind": a["kind"],
+            events.publish(MODULE, "ApplicationWithdrawn", {"applicationId": a["id"], "companyId": a["companyId"],
+                                                            "kind": a["kind"],
                                                             "existingCompany": a["existingCompany"]})
         return public(a)

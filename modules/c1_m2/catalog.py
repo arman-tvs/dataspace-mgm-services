@@ -39,7 +39,8 @@ INITIAL_AT = "2026-01-01T00:00:00Z"
 # README 14.3; the agreements of a role come from the catalogue
 ROLES = [
     {"role": "ACTIVE_PARTICIPANT", "selectable": True, "name": {"de": "Teilnehmer", "en": "Participant"},
-     "description": {"de": "Datenanbieter, Datenkonsument, App-Nutzer", "en": "Data provider, data consumer, app user"}},
+     "description": {"de": "Datenanbieter, Datenkonsument, App-Nutzer",
+                     "en": "Data provider, data consumer, app user"}},
     {"role": "APP_PROVIDER", "selectable": True, "name": {"de": "App-Anbieter", "en": "App provider"},
      "description": {"de": "bietet Apps im Marktplatz an", "en": "offers apps in the marketplace"}},
     {"role": "SERVICE_PROVIDER", "selectable": True, "name": {"de": "Service-Anbieter", "en": "Service provider"},

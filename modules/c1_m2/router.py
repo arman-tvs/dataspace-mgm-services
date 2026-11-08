@@ -152,7 +152,8 @@ def get_document(applicationId: str, documentId: str,
 
 @router.delete("/applications/{applicationId}/documents/{documentId}", status_code=204)
 def delete_document(applicationId: str, documentId: str,
-                    claims: dict = standin.perm(MODULE, "DELETE", "/applications/{applicationId}/documents/{documentId}")):
+                    claims: dict = standin.perm(MODULE, "DELETE",
+                                                "/applications/{applicationId}/documents/{documentId}")):
     interface.delete_document(applicationId, documentId, claims["sub"])
 
 
@@ -160,7 +161,8 @@ def delete_document(applicationId: str, documentId: str,
 @router.get("/osp/applications")
 def list_all_applications(status: list[Status] | None = Query(None), kind: list[Kind] | None = Query(None),
                           verification: list[Verification] | None = Query(None), companyId: str | None = None,
-                          page: int = Page, size: int = Size, _: dict = standin.perm(MODULE, "GET", "/osp/applications")):
+                          page: int = Page, size: int = Size,
+                          _: dict = standin.perm(MODULE, "GET", "/osp/applications")):
     return interface.list_all(status, kind, verification, companyId, page, size)
 
 
@@ -171,13 +173,15 @@ def get_any_application(applicationId: str, _: dict = standin.perm(MODULE, "GET"
 
 @router.get("/osp/applications/{applicationId}/documents/{documentId}")
 def get_any_document(applicationId: str, documentId: str,
-                     claims: dict = standin.perm(MODULE, "GET", "/osp/applications/{applicationId}/documents/{documentId}")):
+                     claims: dict = standin.perm(MODULE, "GET",
+                                                 "/osp/applications/{applicationId}/documents/{documentId}")):
     return _download(*interface.staff_document(applicationId, documentId, claims["sub"]))
 
 
 @router.get("/osp/agreements")
 def list_agreement_versions(agreementKey: str | None = None, status: Literal["ACTIVE", "INACTIVE"] | None = None,
-                            page: int = Page, size: int = Size, _: dict = standin.perm(MODULE, "GET", "/osp/agreements")):
+                            page: int = Page, size: int = Size,
+                            _: dict = standin.perm(MODULE, "GET", "/osp/agreements")):
     return interface.list_agreement_versions(agreementKey, status, page, size)
 
 

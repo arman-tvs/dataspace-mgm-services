@@ -50,7 +50,8 @@ def complete_application(input: dict) -> dict:
         if a["status"] == "SUBMITTED":
             now = now_iso()
             a.update(status="COMPLETED", completedAt=now, changedAt=now)
-            events.publish(MODULE, "ApplicationCompleted", {"applicationId": a["id"], "companyId": a["companyId"], "kind": a["kind"]})
+            events.publish(MODULE, "ApplicationCompleted", {"applicationId": a["id"], "companyId": a["companyId"],
+                                                            "kind": a["kind"]})
         elif a["status"] != "COMPLETED":
             raise errors.invalid_state(f"application is {a['status']}", retryable=False)
         audit(a, "stepCompleteApplication", step=input)

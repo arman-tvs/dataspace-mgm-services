@@ -47,7 +47,8 @@ def now_iso() -> str:
     return dt.datetime.fromtimestamp(attestation.now(), dt.UTC).isoformat()
 
 
-def audit(a: dict, operation: str, sub: str | None = None, step: dict | None = None, object_id: str | None = None) -> None:
+def audit(a: dict, operation: str, sub: str | None = None, step: dict | None = None,
+          object_id: str | None = None) -> None:
     store.audit_log.append({"at": now_iso(), "sub": sub, "processId": (step or {}).get("processId"),
                       "stepRunId": (step or {}).get("stepRunId"), "companyId": a["companyId"], "operation": operation,
                       "applicationId": a["id"], "objectId": object_id})

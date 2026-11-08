@@ -31,7 +31,8 @@ from modules.c1_m2.services.common import err
 
 
 def list_countries(lang: str) -> list[dict]:
-    return sorted(({"code": c["code"], "name": c["name"].get(lang) or c["name"]["en"]} for c in catalog.master()["countries"]),
+    return sorted(({"code": c["code"], "name": c["name"].get(lang) or c["name"]["en"]}
+                   for c in catalog.master()["countries"]),
                   key=lambda c: c["code"])
 
 

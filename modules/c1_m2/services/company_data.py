@@ -69,10 +69,12 @@ def company_data_ebw(company: dict, given: dict) -> tuple[dict, list[dict]]:
     if fields:
         raise errors.attestation_mismatch(fields)
     if not address and not (claim.get("street_address") and claim.get("locality")):
-        raise errors.validation([err("companyData.address", "the attestation has no address: streetName and city required")])
+        raise errors.validation([err("companyData.address",
+                                     "the attestation has no address: streetName and city required")])
     identifiers = [{"type": "EBWOID", "value": ebwoid, "source": "ATTESTATION"}]
     if euid:
-        identifiers.append({"type": "EUID", "value": catalog.normalise_identifier("EUID", euid), "source": "ATTESTATION"})
+        identifiers.append({"type": "EUID", "value": catalog.normalise_identifier("EUID", euid),
+                            "source": "ATTESTATION"})
     identifiers += [{"type": t, "value": v, "source": "APPLICANT"} for t, v in ids.items()
                     if t != "EBWOID" and not (t == "EUID" and euid)]
     street = " ".join(p for p in (address.get("streetName"), address.get("streetNumber")) if p) if address else None
@@ -94,7 +96,8 @@ def company_data_ebw(company: dict, given: dict) -> tuple[dict, list[dict]]:
 def company_data_documents(given: dict) -> tuple[dict, list[dict]]:
     """6.9: all data from the person."""
     return ({"legalName": given["legalName"], "shortName": given.get("shortName"), "address": given["address"],
-             "identifiers": [{"type": t, "value": v, "source": "APPLICANT"} for t, v in given_identifiers(given).items()]}, [])
+             "identifiers": [{"type": t, "value": v, "source": "APPLICANT"}
+                             for t, v in given_identifiers(given).items()]}, [])
 
 
 def build_company_data(verification: str, company: dict | None, given: dict) -> tuple[dict, list[dict]]:
@@ -107,7 +110,8 @@ def check_existing_identifiers(company: dict, ebwoid: str | None, euid: str | No
     fields = []
     if ebwoid and kept.get("EBWOID") and kept["EBWOID"] != ebwoid:
         fields.append("EBWOID")
-    if euid and kept.get("EUID") and catalog.normalise_identifier("EUID", kept["EUID"]) != catalog.normalise_identifier("EUID", euid):
+    if euid and kept.get("EUID") and (catalog.normalise_identifier("EUID", kept["EUID"])
+                                      != catalog.normalise_identifier("EUID", euid)):
         fields.append("EUID")
     if fields:
         raise errors.attestation_mismatch(fields)
@@ -115,7 +119,8 @@ def check_existing_identifiers(company: dict, ebwoid: str | None, euid: str | No
 
 def company_for_reference(body: dict, kind: str) -> dict:
     """6.2: read the company at C3-M1 and check that status and reason fit the application kind."""
-    company = gateways.company_by_id(body["companyId"]) if body.get("companyId") else gateways.company_by_bpn(body["bpn"])
+    company = (gateways.company_by_id(body["companyId"]) if body.get("companyId")
+               else gateways.company_by_bpn(body["bpn"]))
     if company is None:
         raise errors.company_unknown()
     transferred = company.get("deactivationReason") == "TRANSFERRED"

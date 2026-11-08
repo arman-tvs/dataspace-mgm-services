@@ -77,7 +77,8 @@ def config() -> dict:
     """Variables of README 4; an unset value takes the column "Example" (FRAMEWORK 4.8)."""
     return {"issuer": os.environ.get("ATTESTATION_ISSUER", ""),
             "audience": os.environ.get("ATTESTATION_AUDIENCE") or "portal-registration",
-            "algorithms": [a.strip() for a in (os.environ.get("ATTESTATION_ALGORITHMS") or "ES256").split(",") if a.strip()],
+            "algorithms": [a.strip() for a in (os.environ.get("ATTESTATION_ALGORITHMS") or "ES256").split(",")
+                           if a.strip()],
             "clients": [c.strip() for c in os.environ.get("ATTESTATION_CLIENT_IDS", "").split(",") if c.strip()],
             "maxAge": duration_seconds(os.environ.get("ATTESTATION_MAX_AGE") or "P30D"),
             "skew": int(os.environ.get("ATTESTATION_CLOCK_SKEW_SECONDS") or 60),
@@ -105,7 +106,8 @@ def _key(kid: str | None) -> dict | None:
     cache_seconds = config()["cacheSeconds"]
     with _jwks_lock:
         cached = _jwks
-    keys = cached[0] if cached and time.monotonic() - cached[1] < cache_seconds and not os.environ.get("ATTESTATION_JWKS_FILE") else None
+    fresh = cached and time.monotonic() - cached[1] < cache_seconds and not os.environ.get("ATTESTATION_JWKS_FILE")
+    keys = cached[0] if fresh and cached else None
     found = next((k for k in keys or [] if k.get("kid") == kid), None)
     if found is None:
         keys = _fetch_keys()
@@ -244,12 +246,15 @@ def summary(header: dict, p: dict) -> dict:
             "verifiedAt": _ts(p["verified_at"]),
             "person": {"givenName": p["person"]["given_name"], "familyName": p["person"]["family_name"]},
             "representation": {"confirmed": rep["confirmed"], "result": rep.get("result"), "type": rep.get("type"),
-                               "role": rep.get("role"), "validUntil": rep.get("valid_until"), "issuer": rep.get("issuer"),
+                               "role": rep.get("role"), "validUntil": rep.get("valid_until"),
+                               "issuer": rep.get("issuer"),
                                "trust": rep.get("trust"), "reasons": list(rep.get("reasons") or [])},
             "keyId": header.get("kid"), "clientId": p["client_id"],
             "company": {"legalName": company["legal_name"], "ebwoid": company["ebwoid"], "euid": company.get("euid"),
                         "countryCode": company["country"],
-                        "address": addr and {"streetAddress": addr.get("street_address"), "postalCode": addr.get("postal_code"),
+                        "address": addr and {"streetAddress": addr.get("street_address"),
+                                             "postalCode": addr.get("postal_code"),
                                              "locality": addr.get("locality"), "country": addr.get("country")}},
-            "evidence": [{"type": e.get("type"), "vct": e.get("vct"), "issuer": e.get("issuer"), "wallet": e.get("wallet"),
+            "evidence": [{"type": e.get("type"), "vct": e.get("vct"), "issuer": e.get("issuer"),
+                          "wallet": e.get("wallet"),
                           "statusChecked": e.get("status_checked")} for e in p["evidence"]]}
