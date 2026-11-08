@@ -179,7 +179,8 @@ class InMemoryTechnicalUserRepository:
             self._pending.append((event_type, copy.deepcopy(data)))
 
     def flush_outbox(self) -> None:
-        """Publishes the committed events in order; an event that fails for a temporary reason stays for the next try."""
+        """Publishes the committed events in order; an event that fails for a temporary reason stays for the
+        next try."""
         with self._lock:
             while self._outbox:
                 event_type, data = self._outbox[0]

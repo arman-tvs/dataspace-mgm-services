@@ -20,7 +20,8 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: GitHub Copilot (GPT-5.1)
 #################################################################################
-"""C2-M3 application services: `queries` read, `commands` are people's operations, `steps` are Process Orchestration's."""
+"""C2-M3 application services: `queries` read, `commands` are people's operations, `steps` are Process
+Orchestration's."""
 
 from modules.c2_m3 import iam as _iam
 from modules.c2_m3.repository import repository as _repository

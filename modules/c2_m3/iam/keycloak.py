@@ -30,7 +30,7 @@ import os
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Concatenate
 from urllib.parse import quote
 
 import httpx
@@ -43,10 +43,11 @@ from .port import IamConflict, IamError, IamNotFound, UnknownRole
 OWNER_ATTRIBUTE = "c2_m3_technical_user_id"   # marks the clients this module created, with the ID of their account
 
 
-def _retry_stale(method: Callable[..., Any]) -> Callable[..., Any]:
+def _retry_stale[**P, R](method: Callable[Concatenate[KeycloakIAM, str, P], R],
+                         ) -> Callable[Concatenate[KeycloakIAM, str, P], R]:
     """A cached ID can go stale (the client was removed or recreated outside this module): forget it, retry once."""
     @functools.wraps(method)
-    def wrapper(self: KeycloakIAM, client_id: str, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(self: KeycloakIAM, client_id: str, /, *args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return method(self, client_id, *args, **kwargs)
         except IamNotFound:
@@ -55,9 +56,10 @@ def _retry_stale(method: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-def _retry_stale_roles_client(method: Callable[..., Any]) -> Callable[..., Any]:
+def _retry_stale_roles_client[**P, R](method: Callable[Concatenate[KeycloakIAM, P], R],
+                                      ) -> Callable[Concatenate[KeycloakIAM, P], R]:
     @functools.wraps(method)
-    def wrapper(self: KeycloakIAM, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(self: KeycloakIAM, /, *args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return method(self, *args, **kwargs)
         except IamNotFound:

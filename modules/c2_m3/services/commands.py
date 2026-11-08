@@ -60,7 +60,8 @@ def create_technical_user(*, company_id: str, body: dict, actor_sub: str) -> dic
             with contextlib.suppress(Problem):   # never touches a client that is not this account's
                 iam_access.call(iam.delete, row["iam_client_id"], owner_id=row["id"])
             raise
-    return projections.details(row, Viewer.OWNER, roles=assigned) | {"credentials": projections.credentials(row, secret)}
+    credentials = {"credentials": projections.credentials(row, secret)}
+    return projections.details(row, Viewer.OWNER, roles=assigned) | credentials
 
 
 def _update_roles(row: TechnicalUserRecord, data: TechnicalUserUpdate) -> tuple[list[str], list[str]]:
