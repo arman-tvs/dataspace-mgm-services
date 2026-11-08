@@ -34,7 +34,6 @@ import logging
 import os
 import threading
 import uuid
-from typing import Any
 
 from portal_common import events
 
@@ -106,7 +105,7 @@ def _number(name: str, default: float) -> float:
     return value if value > 0 else default
 
 
-def _when(value: Any) -> dt.datetime | None:
+def _when(value: dt.datetime | str | None) -> dt.datetime | None:
     """A timezone-aware datetime from a datetime or an ISO string, None if there is none."""
     if isinstance(value, str):
         try:
@@ -118,7 +117,7 @@ def _when(value: Any) -> dt.datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
 
 
-def iso(value: Any) -> str | None:
+def iso(value: dt.datetime | str | None) -> str | None:
     moment = _when(value)
     return moment.isoformat() if moment else None
 

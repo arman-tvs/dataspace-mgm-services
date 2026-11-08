@@ -36,7 +36,7 @@ import copy
 import datetime as dt
 import threading
 from collections.abc import Iterator
-from typing import Any, Protocol
+from typing import Protocol
 
 
 class WalletStore(Protocol):
@@ -62,7 +62,7 @@ class WalletStore(Protocol):
     def list_accounts(self, wallet_id: str | None = None, statuses: list[str] | None = None) -> list[dict]: ...
     def put_account_credentials(self, wallet_account_id: str, token_url: str, client_id: str,
                                 client_secret_encrypted: bytes, nonce: bytes, key_version: int,
-                                created_at: Any, expires_at: Any) -> None: ...
+                                created_at: dt.datetime, expires_at: dt.datetime) -> None: ...
     def get_account_credentials(self, wallet_account_id: str) -> dict | None: ...
     def delete_account_credentials(self, wallet_account_id: str) -> None: ...
     def pop_account_credentials(self, wallet_account_id: str) -> dict | None: ...
@@ -80,7 +80,7 @@ class WalletStore(Protocol):
     def reset(self) -> None: ...
 
 
-def _jsonable(value: Any) -> Any:
+def _jsonable(value: object) -> object:
     if isinstance(value, (bytes, bytearray)):
         return bytes(value).hex()
     if isinstance(value, (dt.datetime, dt.date)):
@@ -92,7 +92,7 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def _when(value: Any) -> dt.datetime:
+def _when(value: object) -> dt.datetime:
     """A sortable UTC time from a datetime or an ISO string (rows may carry either)."""
     if isinstance(value, str):
         try:
@@ -193,7 +193,7 @@ class InMemoryStore:
 
     def put_account_credentials(self, wallet_account_id: str, token_url: str, client_id: str,
                                 client_secret_encrypted: bytes, nonce: bytes, key_version: int,
-                                created_at: Any, expires_at: Any) -> None:
+                                created_at: dt.datetime, expires_at: dt.datetime) -> None:
         row = {"wallet_account_id": wallet_account_id, "token_url": token_url, "client_id": client_id,
                "client_secret_encrypted": bytes(client_secret_encrypted), "nonce": bytes(nonce),
                "key_version": key_version, "created_at": created_at, "expires_at": expires_at}
@@ -241,7 +241,7 @@ class InMemoryStore:
     # ------------------------------------------------------------------------------- dump, reset
     def dump(self) -> dict:
         with self._data:
-            return _jsonable({
+            dumped = _jsonable({
                 "dataspace_wallet": list(self._wallets.values()),
                 "wallet_secret": list(self._secrets.values()),
                 "audit_log": self._audit,
@@ -249,6 +249,8 @@ class InMemoryStore:
                 "wallet_account": list(self._accounts.values()),
                 "wallet_account_credentials": list(self._account_credentials.values()),
             })
+        assert isinstance(dumped, dict)   # _jsonable keeps a dict a dict
+        return dumped
 
     def reset(self) -> None:
         with self._data:

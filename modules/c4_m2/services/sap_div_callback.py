@@ -28,14 +28,13 @@ DID document that fit the wallet; then the holder access is stored and the DID c
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from modules.c4_m2 import did, errors, service
 
 DEFAULT_CALLBACK_CLIENT = "sa-div-callback"
 
 
-def _callback_body_problem(body: Any) -> str | None:
+def _callback_body_problem(body: object) -> str | None:
     """Why a callback body is malformed (openapi `SapDivWalletCallback`), None if it is complete."""
     if not isinstance(body, dict) or not isinstance(body.get("did"), str) or not body["did"]:
         return "did is required"
@@ -53,7 +52,7 @@ def _callback_body_problem(body: Any) -> str | None:
 def _callback_document_valid(document: dict) -> bool:
     """README 7.6 step 4: schema of Portal 2.6.0, `@context` list, `id`, `service` list with `id` and `type`,
     `verificationMethod` list with `id`, `type` and `publicKeyJwk` with `kty`, `crv`, `x`, `y`."""
-    def text(value: Any) -> bool:
+    def text(value: object) -> bool:
         return isinstance(value, str) and value != ""
     if not isinstance(document.get("@context"), list) or not text(document.get("id")):
         return False

@@ -37,7 +37,6 @@ import contextlib
 import datetime as dt
 import os
 import uuid
-from typing import Any
 
 from modules.c4_m2 import crypto, errors, providers, service
 from portal_common import events
@@ -58,7 +57,7 @@ def _number(name: str, default: float) -> float:
     return value if value > 0 else default
 
 
-def _aware(value: Any) -> dt.datetime | None:
+def _aware(value: dt.datetime | str | None) -> dt.datetime | None:
     if isinstance(value, str):
         try:
             value = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -69,7 +68,7 @@ def _aware(value: Any) -> dt.datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
 
 
-def _iso(value: Any) -> str | None:
+def _iso(value: dt.datetime | str | None) -> str | None:
     moment = _aware(value)
     return moment.isoformat() if moment else None
 
@@ -79,7 +78,7 @@ def _lock(technical_user_id: str) -> contextlib.AbstractContextManager:
     return service.get_store().transaction(f"technical-user:{technical_user_id}")
 
 
-def _uuid(value: Any, name: str) -> str:
+def _uuid(value: object, name: str) -> str:
     try:
         if not isinstance(value, str):
             raise ValueError
@@ -154,9 +153,11 @@ def view_wallet_account(technical_user_id: str, claims: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------- transitions (README 6.3)
-def _publish(type_: str, account: dict, **extra: Any) -> None:
+def _publish(type_: str, account: dict, *, provider: str | None = None, reason: str | None = None) -> None:
+    """An event of README 10 with `provider` or `reason` where the event has it."""
+    extra = {k: v for k, v in (("provider", provider), ("reason", reason)) if v is not None}
     events.publish(MODULE, type_, {"technicalUserId": account["technical_user_id"], "companyId": account["company_id"],
-                                   "walletAccountRef": account["id"], **extra})
+                                   "walletAccountRef": account["id"]} | extra)
 
 
 def _activate(account: dict, token_url: str, client_id: str, secret: str) -> dict:
@@ -214,8 +215,9 @@ def _new_account(technical_user_id: str, company_id: str, wallet: dict) -> dict:
 def _order(account: dict, wallet: dict) -> dict:
     """README 8.2 step 4. `provider_ordered_at` is set only after the provider accepted the order."""
     adapter = providers.get(account["provider"])
-    order = {"company_id": account["company_id"], "bpn": wallet["bpn"], "technical_user_id": account["technical_user_id"],
-             "wallet_account_ref": account["id"], "provider_name": account["provider_name"]}
+    order = {"company_id": account["company_id"], "bpn": wallet["bpn"],
+             "technical_user_id": account["technical_user_id"], "wallet_account_ref": account["id"],
+             "provider_name": account["provider_name"]}
     if adapter.provider == "IDENTITY_HUB":
         order["sts_access"] = service.wallet_secret(wallet["id"], service.STS_ACCESS)
     answer = adapter.order_account(order)
@@ -287,17 +289,22 @@ def delete_wallet_account(input: dict) -> dict:
             return _reply(input, "delete-wallet-account", "DONE", account)
         if account["company_id"] != company_id:
             raise errors.conflict("the wallet account belongs to another company")
-        if account["status"] == FAILED:
-            account = _delete(account)
-        elif providers.get(account["provider"]).deletion_is_async:
-            if account["status"] == ACTIVE:
-                account["status"] = DELETING
-                _save(account)
-            if not account.get("deletion_ordered_at"):
-                account = _order_deletion(account)
-        else:
+        return _reply(input, "delete-wallet-account", "RUNNING", _start_deletion(account))
+
+
+def _start_deletion(account: dict) -> dict:
+    """README 8.3 step 4: FAILED is deleted at once; otherwise the deletion is ordered, once, and an asynchronous
+    provider sees the account `DELETING` until it calls back."""
+    if account["status"] == FAILED:
+        return _delete(account)
+    if providers.get(account["provider"]).deletion_is_async:
+        if account["status"] == ACTIVE:
+            account["status"] = DELETING
+            _save(account)
+        if not account.get("deletion_ordered_at"):
             account = _order_deletion(account)
-        return _reply(input, "delete-wallet-account", "RUNNING", account)
+        return account
+    return _order_deletion(account)
 
 
 # ------------------------------------------------------------------------------ SAP DIV callbacks

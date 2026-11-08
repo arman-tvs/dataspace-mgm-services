@@ -76,8 +76,9 @@ def _context_id(bpn: str) -> str:
 
 # --------------------------------------------------------------------------------------- stand-in
 def _standin(method: str, path: str, body: dict | None) -> tuple[int, dict | None]:
-    """The built-in IdentityHub: participant contexts in memory (README 11.2)."""
-    context = body["participantContextId"] if method == "POST" else path.rsplit("/", 1)[-1]
+    """The built-in IdentityHub: participant contexts in memory (README 11.2). A POST always has a body."""
+    posted = body if body is not None else {}
+    context = posted["participantContextId"] if method == "POST" else path.rsplit("/", 1)[-1]
     bpn = context
     if method == "DELETE" and os.environ.get("IDENTITYHUB_CONTEXT_ID_ENCODING", "").strip().lower() == "base64":
         bpn = context = base64.urlsafe_b64decode(context + "=" * (-len(context) % 4)).decode()
@@ -93,7 +94,7 @@ def _standin(method: str, path: str, body: dict | None) -> tuple[int, dict | Non
             return 409, None
         answer = {"apiKey": common.random_secret(), "clientId": f"sts-{bpn}", "clientSecret": common.random_secret()}
         _contexts[context] = answer
-    common.publish_wallet_document(bpn, body["did"], body["serviceEndpoints"][0]["serviceEndpoint"])
+    common.publish_wallet_document(bpn, posted["did"], posted["serviceEndpoints"][0]["serviceEndpoint"])
     return 201, answer
 
 
