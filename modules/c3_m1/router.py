@@ -268,7 +268,7 @@ def create_change_request(companyId: str, data: Annotated[str, Form()],
     try:
         parsed = json.loads(data)
     except ValueError as error:
-        raise errors.validation(errors=[{"field": "data", "reason": f"not JSON: {error}"}]) from error
+        raise errors.validation(errors=[{"field": "data", "message": f"not JSON: {error}"}]) from error
     files = [(upload.filename or "", upload.file.read(), upload.content_type) for upload in documents]
     return interface.create_change_request(companyId, parsed, files, claims.get("sub"))
 

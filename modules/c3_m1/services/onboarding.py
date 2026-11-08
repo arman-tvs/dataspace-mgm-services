@@ -102,7 +102,7 @@ def _check_new_company(row: dict, identifiers: list[dict], roles: list[str], ver
     for role in roles:
         invalid += validation.validate_company_role(role, config.role_catalogue())
     if verification == "EBW" and not any(entry["type"] == "EBWOID" for entry in identifiers):
-        invalid.append({"field": "identifiers", "reason": "EBWOID required with a verification"})
+        invalid.append({"field": "identifiers", "message": "EBWOID required with a verification"})
     if invalid:
         raise errors.validation(errors=invalid, retryable=False)
 

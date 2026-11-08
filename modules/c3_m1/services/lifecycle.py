@@ -65,7 +65,7 @@ def deactivate_company(input: dict) -> dict:
 
 def _check_deactivation_reason(reason: object) -> None:
     if reason not in store.DEACTIVATION_REASONS:
-        raise errors.validation(errors=[{"field": "reason", "reason": "MANUAL or TRANSFERRED"}],
+        raise errors.validation(errors=[{"field": "reason", "message": "MANUAL or TRANSFERRED"}],
                       retryable=False)
 
 

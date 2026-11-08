@@ -128,7 +128,7 @@ def _check_requested_changes(companyId: str, row: dict, data: dict, changes: dic
         if not identifiers and wallet:
             # "afterwards at least one identifier" counts the wallet identifiers that stay
             invalid = [error for error in invalid
-                       if not (error["field"] == "identifiers" and error["reason"] == "missing")]
+                       if not (error["field"] == "identifiers" and error["message"] == "missing")]
         invalid += _wallet_identifier_conflict(row, identifiers)
     if invalid:
         raise errors.validation(errors=invalid)
@@ -139,7 +139,7 @@ def _check_requested_changes(companyId: str, row: dict, data: dict, changes: dic
     if core_changed and row["core_data_source"] == "EBW":
         raise errors.attestation_required()
     if not _changes_differs(row, changes):
-        raise errors.validation(errors=[{"field": "changes", "reason": "no change"}])
+        raise errors.validation(errors=[{"field": "changes", "message": "no change"}])
 
 
 def _check_documents(documents: list[tuple[str, bytes, str | None]]) -> None:
@@ -147,7 +147,7 @@ def _check_documents(documents: list[tuple[str, bytes, str | None]]) -> None:
     invalid: list[FieldError] = []
     if not 1 <= len(documents) <= config.change_request_max_documents():
         maximum = config.change_request_max_documents()
-        invalid.append({"field": "documents", "reason": f"1 to {maximum} documents"})
+        invalid.append({"field": "documents", "message": f"1 to {maximum} documents"})
     for file_name, content, stated in documents:
         invalid += validation.validate_document(file_name, content, stated_media_type=stated,
                                                max_bytes=config.change_request_max_document_bytes())
@@ -203,7 +203,7 @@ def list_change_requests(*, status: list[str] | str | None = None,
         items, total = store.list_change_requests(status=status, company_id=companyId,
                                                   page=int(page or 0), size=int(size or 20))
     except ValueError as error:
-        raise errors.validation(errors=[{"field": "filter", "reason": str(error)}]) from error
+        raise errors.validation(errors=[{"field": "filter", "message": str(error)}]) from error
     return {"items": [_change_request_view(item, osp=True,
                                            company=store.get_company(item["company_id"]))
                       for item in items],

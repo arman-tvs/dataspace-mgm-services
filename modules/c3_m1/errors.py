@@ -39,9 +39,9 @@ MODULE = "c3-m1"
 
 
 class FieldError(TypedDict):
-    """One entry of `errors` in a 400 answer: the field and why it is invalid."""
+    """One entry of `errors` in a 400 answer (openapi `Problem.errors`): the field and why it is invalid."""
     field: str
-    reason: str
+    message: str
 
 
 Extra = bool | str | list[str] | list[FieldError]

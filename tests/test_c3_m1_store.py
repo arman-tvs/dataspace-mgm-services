@@ -386,20 +386,20 @@ def test_value_normalized_drops_spaces_and_punctuation():
 def test_name_rules():
     base = {"street": "Weg 1", "city": "Stadt", "country_code": "DE"}
     assert v.validate_company({"name": "Beispiel GmbH", **base}) == []
-    assert {"field": "name", "reason": "required"} in v.validate_company(base)
-    assert {"field": "name", "reason": "required"} in v.validate_company({"name": " ", **base})
-    assert {"field": "name", "reason": "whitespace"} in v.validate_company({"name": " A", **base})
-    assert {"field": "name", "reason": "too-long"} in v.validate_company({"name": "x" * 161, **base})
+    assert {"field": "name", "message": "required"} in v.validate_company(base)
+    assert {"field": "name", "message": "required"} in v.validate_company({"name": " ", **base})
+    assert {"field": "name", "message": "whitespace"} in v.validate_company({"name": " A", **base})
+    assert {"field": "name", "message": "too-long"} in v.validate_company({"name": "x" * 161, **base})
 
 
 def test_required_address_fields_and_lengths():
     errors = v.validate_company({"name": "A"})
-    assert {(e["field"], e["reason"]) for e in errors} >= {("street", "required"),
+    assert {(e["field"], e["message"]) for e in errors} >= {("street", "required"),
                                                            ("city", "required"),
                                                            ("country_code", "required")}
     errors = v.validate_company({"short_name": "x" * 101, "house_number": "x" * 51,
                                  "address_addition": "x" * 256, "postal_code": "x" * 13})
-    assert {(e["field"], e["reason"]) for e in errors} >= {
+    assert {(e["field"], e["message"]) for e in errors} >= {
         ("short_name", "too-long"), ("house_number", "too-long"),
         ("address_addition", "too-long"), ("postal_code", "too-long")}
 
@@ -409,82 +409,82 @@ def test_region_rules():
     assert v.validate_company({"region": "BW", **base}) == []
     assert v.validate_company({"region": "B1", **base}) == []
     assert v.validate_company(base) == []
-    assert {"field": "region", "reason": "format"} in v.validate_company({"region": "bw", **base})
-    assert {"field": "region", "reason": "format"} in v.validate_company({"region": "BWX1", **base})
+    assert {"field": "region", "message": "format"} in v.validate_company({"region": "bw", **base})
+    assert {"field": "region", "message": "format"} in v.validate_company({"region": "BWX1", **base})
 
 
 def test_country_code_rules():
     assert v.validate_country_code("DE") == []
-    assert {"field": "country_code", "reason": "format"} in v.validate_country_code("de")
-    assert {"field": "country_code", "reason": "format"} in v.validate_country_code("D1")
-    assert {"field": "country_code", "reason": "unknown-country"} in v.validate_country_code("AT")
-    assert {"field": "country_code", "reason": "required"} in v.validate_country_code(None)
+    assert {"field": "country_code", "message": "format"} in v.validate_country_code("de")
+    assert {"field": "country_code", "message": "format"} in v.validate_country_code("D1")
+    assert {"field": "country_code", "message": "unknown-country"} in v.validate_country_code("AT")
+    assert {"field": "country_code", "message": "required"} in v.validate_country_code(None)
 
 
 def test_company_enums_and_bpn_format():
     base = {"name": "A", "street": "Weg 1", "city": "Stadt", "country_code": "DE"}
-    assert {"field": "status", "reason": "unknown"} in v.validate_company({"status": "DELETED", **base})
-    assert {"field": "core_data_source", "reason": "unknown"} in v.validate_company(
+    assert {"field": "status", "message": "unknown"} in v.validate_company({"status": "DELETED", **base})
+    assert {"field": "core_data_source", "message": "unknown"} in v.validate_company(
         {"core_data_source": "X", **base})
-    assert {"field": "deactivation_reason", "reason": "unknown"} in v.validate_company(
+    assert {"field": "deactivation_reason", "message": "unknown"} in v.validate_company(
         {"deactivation_reason": "NO_PSP", **base})
     assert v.validate_company({"bpn": "BPNL00000000AAAA", **base}) == []
-    assert {"field": "bpn", "reason": "format"} in v.validate_company({"bpn": "DE123", **base})
+    assert {"field": "bpn", "message": "format"} in v.validate_company({"bpn": "DE123", **base})
 
 
 def test_camel_case_and_nested_address_are_understood():
     errors = v.validate_company({"name": "A", "address": {"street": "Weg 1", "city": "Stadt",
                                                           "countryCode": "de"},
                                  "shortName": "x" * 101})
-    assert errors == [{"field": "short_name", "reason": "too-long"},
-                      {"field": "country_code", "reason": "format"}]
+    assert errors == [{"field": "short_name", "message": "too-long"},
+                      {"field": "country_code", "message": "format"}]
 
 
 def test_partial_validation_checks_only_given_fields():
     assert v.validate_company({"short_name": "Kurz"}, partial=True) == []
     assert v.validate_company({"name": " A"}, partial=True) == [{"field": "name",
-                                                                "reason": "whitespace"}]
+                                                                "message": "whitespace"}]
 
 
 # --------------------------------------------------------------------- identifier rules (6.4)
 def test_a_company_needs_at_least_one_identifier():
-    assert v.validate_identifiers([], "DE") == [{"field": "identifiers", "reason": "missing"}]
-    assert v.validate_identifiers(None, "DE") == [{"field": "identifiers", "reason": "missing"}]
+    assert v.validate_identifiers([], "DE") == [{"field": "identifiers", "message": "missing"}]
+    assert v.validate_identifiers(None, "DE") == [{"field": "identifiers", "message": "missing"}]
 
 
 def test_identifier_type_enum_and_one_per_type():
     errors = v.validate_identifiers([{"type": "VIES", "value": "DE123456789"},
                                      {"type": "VAT_ID", "value": "DE123456789"},
                                      {"type": "VAT_ID", "value": "DE987654321"}], "DE")
-    assert {"field": "identifiers[0].type", "reason": "unknown"} in errors
-    assert {"field": "identifiers[2].type", "reason": "duplicate-type"} in errors
+    assert {"field": "identifiers[0].type", "message": "unknown"} in errors
+    assert {"field": "identifiers[2].type", "message": "duplicate-type"} in errors
 
 
 def test_de_vat_id_accepts_and_rejects():
     assert v.validate_identifiers([{"type": "VAT_ID", "value": "DE123456789"}], "DE") == []
     errors = v.validate_identifiers([{"type": "VAT_ID", "value": "DE12345678"}], "DE")
-    assert errors == [{"field": "identifiers[0].value", "reason": "format"}]
+    assert errors == [{"field": "identifiers[0].value", "message": "format"}]
     errors = v.validate_identifiers([{"type": "VAT_ID", "value": "ATU12345678"}], "DE")
-    assert errors == [{"field": "identifiers[0].value", "reason": "format"}]
+    assert errors == [{"field": "identifiers[0].value", "message": "format"}]
 
 
 def test_euid_and_ebwoid_are_loose():
     assert v.validate_identifiers([{"type": "EUID", "value": "DEXX001T.HRB100001"}], "DE") == []
     assert v.validate_identifiers([{"type": "EBWOID", "value": "EBWOID-DE-0000000001"}], "DE") == []
     assert v.validate_identifiers([{"type": "EBWOID", "value": "A" * 200}], "DE") == []
-    assert {"field": "identifiers[0].value", "reason": "format"} in v.validate_identifiers(
+    assert {"field": "identifiers[0].value", "message": "format"} in v.validate_identifiers(
         [{"type": "EUID", "value": "DE1"}], "DE")
     # EBWOID: 1 to 255 characters without whitespace (6.4); the reference data has `^\S{1,200}$`
-    assert {"field": "identifiers[0].value", "reason": "format"} in v.validate_identifiers(
+    assert {"field": "identifiers[0].value", "message": "format"} in v.validate_identifiers(
         [{"type": "EBWOID", "value": "EBWOID DE 1"}], "DE")
 
 
 def test_lei_and_eori_formats():
     assert v.validate_identifiers([{"type": "LEI_CODE", "value": "529900T8BM49AURSDO55"}], "DE") == []
-    assert {"field": "identifiers[0].value", "reason": "format"} in v.validate_identifiers(
+    assert {"field": "identifiers[0].value", "message": "format"} in v.validate_identifiers(
         [{"type": "LEI_CODE", "value": "kurz"}], "DE")
     assert v.validate_identifiers([{"type": "EORI", "value": "DE1234567"}], "DE") == []
-    assert {"field": "identifiers[0].value", "reason": "format"} in v.validate_identifiers(
+    assert {"field": "identifiers[0].value", "message": "format"} in v.validate_identifiers(
         [{"type": "EORI", "value": "1234567"}], "DE")
 
 
@@ -492,7 +492,7 @@ def test_a_business_wallet_source_can_be_refused():
     errors = v.validate_identifiers([{"type": "EUID", "value": "DEXX001T.HRB100001",
                                       "source": "BUSINESS_WALLET"}], "DE",
                                     allow_business_wallet=False)
-    assert errors == [{"field": "identifiers[0].source", "reason": "business-wallet-source"}]
+    assert errors == [{"field": "identifiers[0].source", "message": "business-wallet-source"}]
 
 
 def test_patterns_fall_back_to_readme_6_4_without_reference_data(tmp_path, monkeypatch):
@@ -507,32 +507,32 @@ def test_patterns_fall_back_to_readme_6_4_without_reference_data(tmp_path, monke
     assert v.validate_identifiers([{"type": "EUID", "value": "ABCD"}], "DE") == []
     assert v.validate_identifiers([{"type": "EBWOID", "value": "x" * 255}], "DE") == []
     assert v.validate_identifiers([{"type": "VAT_ID", "value": "DE123456789"}], "DE") == []
-    assert {"field": "identifiers[0].value", "reason": "format"} in v.validate_identifiers(
+    assert {"field": "identifiers[0].value", "message": "format"} in v.validate_identifiers(
         [{"type": "VAT_ID", "value": "DE12345678"}], "DE")
 
 
 # -------------------------------------------------------------------- change request (7.4)
 def test_change_request_needs_a_change_a_comment_and_declared_identifiers():
     errors = v.validate_change_request({"comment": "bitte ändern"}, "DE")
-    assert errors == [{"field": "changes", "reason": "missing"}]
+    assert errors == [{"field": "changes", "message": "missing"}]
     errors = v.validate_change_request({"name": "Neu"}, "DE")
-    assert errors == [{"field": "comment", "reason": "required"}]
+    assert errors == [{"field": "comment", "message": "required"}]
     errors = v.validate_change_request({"identifiers": [{"type": "VAT_ID", "value": "DE123456789",
                                                          "source": "BUSINESS_WALLET"}],
                                         "comment": "c"}, "DE")
-    assert errors == [{"field": "identifiers[0].source", "reason": "business-wallet-source"}]
+    assert errors == [{"field": "identifiers[0].source", "message": "business-wallet-source"}]
     assert v.validate_change_request({"identifiers": [{"type": "VAT_ID", "value": "DE123456789"}],
                                       "comment": "c"}, "DE") == []
 
 
 def test_comment_and_reason_lengths():
-    assert v.validate_comment("") == [{"field": "comment", "reason": "required"}]
-    assert v.validate_comment("x" * 1001) == [{"field": "comment", "reason": "too-long"}]
+    assert v.validate_comment("") == [{"field": "comment", "message": "required"}]
+    assert v.validate_comment("x" * 1001) == [{"field": "comment", "message": "too-long"}]
     assert v.validate_comment("x" * 1000) == []
-    assert v.validate_reason("x" * 501) == [{"field": "reason", "reason": "too-long"}]
+    assert v.validate_reason("x" * 501) == [{"field": "reason", "message": "too-long"}]
     assert v.validate_reason("x" * 500) == []
     assert v.validate_decision_reason("x" * 1000) == []
-    assert v.validate_decision_reason("x" * 1001) == [{"field": "reason", "reason": "too-long"}]
+    assert v.validate_decision_reason("x" * 1001) == [{"field": "reason", "message": "too-long"}]
 
 
 # ------------------------------------------------------------------------ documents (4, 5)
@@ -548,14 +548,14 @@ def test_a_stated_media_type_is_ignored():
     assert v.validate_document("auszug.pdf", b"%PDF-1.7") == []
     assert v.validate_document("auszug.pdf", b"nur Text",
                                stated_media_type="application/pdf") == [
-        {"field": "document", "reason": "media-type"}]
+        {"field": "document", "message": "media-type"}]
     assert v.validate_document("auszug.png", b"\x89PNG\r\n", max_bytes=4) == [
-        {"field": "document", "reason": "too-large"}]
+        {"field": "document", "message": "too-large"}]
 
 
 def test_file_name_rules():
     assert v.validate_file_name("auszug.pdf") == []
-    assert v.validate_file_name("x" * 201) == [{"field": "file_name", "reason": "too-long"}]
-    assert {"field": "file_name", "reason": "path-parts"} in v.validate_file_name("tmp/auszug.pdf")
-    assert {"field": "file_name", "reason": "path-parts"} in v.validate_file_name(r"tmp\auszug.pdf")
-    assert v.validate_file_name("") == [{"field": "file_name", "reason": "required"}]
+    assert v.validate_file_name("x" * 201) == [{"field": "file_name", "message": "too-long"}]
+    assert {"field": "file_name", "message": "path-parts"} in v.validate_file_name("tmp/auszug.pdf")
+    assert {"field": "file_name", "message": "path-parts"} in v.validate_file_name(r"tmp\auszug.pdf")
+    assert v.validate_file_name("") == [{"field": "file_name", "message": "required"}]

@@ -24,7 +24,7 @@
 #################################################################################
 """Field rules of C3-M1 README 5 and the identifier rules of README 6.4.
 
-Every function returns a list of `{"field": ..., "reason": ...}` dicts and never raises, so the
+Every function returns a list of `{"field": ..., "message": ...}` dicts and never raises, so the
 caller can collect all errors into one 400 `validation` Problem (`errors`, README 12). Reason
 tokens are short and stable: `required`, `type`, `too-long`, `too-short`, `whitespace`, `format`,
 `unknown`, `unknown-country`, `duplicate-type`, `missing`, `business-wallet-source`, `path-parts`,
@@ -165,7 +165,7 @@ def pattern_for(identifier_type: str, country_code: str | None) -> str | None:
 
 # ---------------------------------------------------------------------------------- helpers
 def _error(field: str, reason: str) -> FieldError:
-    return {"field": field, "reason": reason}
+    return {"field": field, "message": reason}
 
 
 def _text(errors: list[FieldError], field: str, value: object, *, required: bool = False,

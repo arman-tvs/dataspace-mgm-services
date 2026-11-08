@@ -411,9 +411,10 @@ class StepResultReactivation(StepResult):
 
 # ---------------------------------------------------------------- errors (README 12)
 class FieldErrorAnswer(BaseModel):
+    """One entry of `errors` (openapi `Problem.errors`): FastAPI's request validation and the module's own rules
+    (`validation.py`) both answer this shape."""
     field: str
-    message: str | None = None
-    reason: str | None = None
+    message: str
 
 
 class Problem(BaseModel):

@@ -105,7 +105,7 @@ def add_company_role(companyId: str, body: dict, sub: str | None = None,
         foreign = sorted(set(given) - set(terms))
         if foreign:
             reason = f"not a term of {role}: {', '.join(foreign)}"
-            raise errors.validation(errors=[{"field": "consents", "reason": reason}])
+            raise errors.validation(errors=[{"field": "consents", "message": reason}])
 
         now = _now()
         for key in terms:

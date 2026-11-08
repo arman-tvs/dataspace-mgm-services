@@ -52,7 +52,7 @@ def list_companies(*, status: list[str] | str | None = None, name: str | None = 
             status=status, name=name, bpn=bpn, has_bpn=has_bpn, company_role=companyRole,
             core_data_source=coreDataSource, page=int(page or 0), size=int(size or 20))
     except ValueError as error:
-        raise errors.validation(errors=[{"field": "filter", "reason": str(error)}]) from error
+        raise errors.validation(errors=[{"field": "filter", "message": str(error)}]) from error
     return {"items": [_summary(row) for row in items], "page": int(page or 0),
             "size": int(size or 20), "total": total}
 
@@ -78,9 +78,9 @@ def query_companies(*, id: list[str] | str | None = None, bpn: list[str] | str |
     ids = [id] if isinstance(id, str) else list(id or [])
     bpns = [bpn] if isinstance(bpn, str) else list(bpn or [])
     if bool(ids) == bool(bpns):
-        raise errors.validation(errors=[{"field": "id,bpn", "reason": "exactly one of both"}])
+        raise errors.validation(errors=[{"field": "id,bpn", "message": "exactly one of both"}])
     if len(ids + bpns) > config.query_max_companies():
-        raise errors.validation(errors=[{"field": "id,bpn", "reason": "too many values"}])
+        raise errors.validation(errors=[{"field": "id,bpn", "message": "too many values"}])
     items, found = [], set()
     for wanted in ids:
         if store.get_company(wanted) is not None:
@@ -121,15 +121,15 @@ def _check_match_request(identifiers: list[dict], wanted_statuses: list[str]) ->
     """400 `validation` for 9.3: 1 to 10 identifiers of known types with values, known statuses."""
     invalid: list[FieldError] = []
     if not 1 <= len(identifiers) <= 10:
-        invalid.append({"field": "identifiers", "reason": "1 to 10 entries"})
+        invalid.append({"field": "identifiers", "message": "1 to 10 entries"})
     for entry in identifiers:
         if entry.get("type") not in (*store.IDENTIFIER_TYPES, "BPN"):
-            invalid.append({"field": "identifiers.type", "reason": str(entry.get("type"))})
+            invalid.append({"field": "identifiers.type", "message": str(entry.get("type"))})
         if not entry.get("value"):
-            invalid.append({"field": "identifiers.value", "reason": "required"})
+            invalid.append({"field": "identifiers.value", "message": "required"})
     for value in wanted_statuses:
         if value not in store.STATUSES:
-            invalid.append({"field": "statuses", "reason": value})
+            invalid.append({"field": "statuses", "message": value})
     if invalid:
         raise errors.validation(errors=invalid)
 
