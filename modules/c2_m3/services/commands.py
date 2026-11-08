@@ -81,7 +81,7 @@ def _update_roles(row: TechnicalUserRecord, data: TechnicalUserUpdate) -> tuple[
 
 
 def _update_metadata(row: TechnicalUserRecord, data: TechnicalUserUpdate) -> bool:
-    name = data.name if "name" in data.model_fields_set else row["name"]
+    name = data.name if data.name is not None else row["name"]   # the schema rejects a null name (no change)
     description = data.description if "description" in data.model_fields_set else row["description"]
     if (name, description) == (row["name"], row["description"]):
         return False
