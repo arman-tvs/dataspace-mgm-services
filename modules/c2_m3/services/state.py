@@ -25,14 +25,13 @@
 """Status rules of README 6.1 and 6.2 as plain functions on a row; the caller saves the row."""
 from __future__ import annotations
 
-from portal_common.problems import Problem
-
-from modules.c2_m3.config import MODULE
+from modules.c2_m3 import errors
 from modules.c2_m3.models import Origin, Status, SubscriptionParty, TechnicalUserRecord, WalletAccess
+from portal_common.problems import Problem
 
 
 def _invalid_state() -> Problem:
-    return Problem(MODULE, 409, "invalid-state", retryable=False)
+    return errors.invalid_state()
 
 
 def after_creation(row: TechnicalUserRecord, *, wallet_requested: bool) -> bool:
@@ -60,7 +59,7 @@ def require_rotatable(row: TechnicalUserRecord) -> None:
 def require_deletable(row: TechnicalUserRecord) -> None:
     """7.5 step 1."""
     if row["wallet_access"] == WalletAccess.REQUESTED:
-        raise Problem(MODULE, 409, "wallet-in-progress", retryable=False)
+        raise errors.wallet_in_progress()
     if row["status"] not in (Status.ACTIVE, Status.INACTIVE):
         raise _invalid_state()
 

@@ -22,13 +22,28 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: GitHub Copilot (Claude Sonnet 5.5)
 #################################################################################
-"""Input of the operations and steps as in `openapi.yaml` (components/schemas); `validation.parse` turns a
-failed check into 400 `validation`."""
+"""Input of the operations and steps as in `openapi.yaml` (components/schemas); `parse` turns a failed check into
+400 `validation`."""
 from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from modules.c2_m3 import errors
+
+_MAX_ISSUES = 5
+
+
+def parse[Model: BaseModel](model: type[Model], data: object) -> Model:
+    """Checks `data` against the pydantic model of an `openapi.yaml` schema; 400 `validation` without input values."""
+    try:
+        return model.model_validate(data)
+    except ValidationError as exc:
+        issues = exc.errors(include_url=False, include_input=False, include_context=False)   # no input values
+        raise errors.validation("; ".join(f"{'.'.join(str(part) for part in issue['loc']) or 'body'}: {issue['msg']}"
+                                          for issue in issues[:_MAX_ISSUES])) from exc
+
 
 Uuid = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")]
 

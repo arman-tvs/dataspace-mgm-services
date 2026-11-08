@@ -37,8 +37,7 @@ from . import interface
 from .dependencies import company_scoped, perm
 from .interface import MODULE
 from .models import Origin, Status, WalletAccess
-from .schemas import SubscriptionCredentialsRequest
-from .services import handle_event, validation
+from .schemas import SubscriptionCredentialsRequest, parse
 
 router = APIRouter(prefix=spec.module(MODULE).base_path, route_class=route_class(MODULE), tags=[MODULE])
 
@@ -53,7 +52,7 @@ def reset() -> None:
 
 def on_event(event: dict) -> None:
     """Replays the wallet flows when `PROCESS_STUB=true` (README 11.3); every other event is ignored."""
-    handle_event(event)
+    interface.handle_event(event)
 
 
 # -- technical users of the company (`assignable-roles` is declared before `{id}`) -------------
@@ -130,7 +129,7 @@ def check_technical_user(id: str, companyId: str, offerSubscriptionId: str | Non
 @router.post("/internal/technical-users/{id}/credentials/rotate", summary="Rotate a subscription account's secret")
 def rotate_subscription_credentials(id: str, body: dict = Body(...),
                                     _: dict = perm("POST", "/internal/technical-users/{id}/credentials/rotate")):
-    request = validation.parse(SubscriptionCredentialsRequest, body)   # undeclared fields (even `id`) are a 400
+    request = parse(SubscriptionCredentialsRequest, body)   # undeclared fields (even `id`) are a 400
     return interface.rotate_subscription_credentials(id=id, offerSubscriptionId=request.offerSubscriptionId)
 
 

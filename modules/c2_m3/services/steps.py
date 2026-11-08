@@ -27,9 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from portal_common import standin
-
-from modules.c2_m3 import config, gateways
+from modules.c2_m3 import config, gateways, schemas
 from modules.c2_m3.models import LIVE_STATUSES, Origin, Status, SubscriptionParty, TechnicalUserRecord
 from modules.c2_m3.repository import repository
 from modules.c2_m3.schemas import (
@@ -39,7 +37,9 @@ from modules.c2_m3.schemas import (
     StepSubscriptionRef,
     StepTechnicalUserRef,
 )
-from . import accounts, audit, iam_access, roles, state, validation
+from portal_common import standin
+
+from . import accounts, audit, iam_access, roles, state
 from .audit import Actor
 
 
@@ -81,7 +81,7 @@ def _subscription_account(input: dict, data: StepCreateForSubscription, *, party
 
 
 def create_for_subscription(input: dict) -> dict:
-    data = validation.parse(StepCreateForSubscription, input)
+    data = schemas.parse(StepCreateForSubscription, input)
     role_names = data.role_names
     roles.check_exist(role_names)
     provider_only = set(role_names) & config.provider_roles()
@@ -113,7 +113,7 @@ def _wallet_result(row: TechnicalUserRecord) -> dict:
 
 
 def apply_wallet_access(input: dict) -> dict:
-    data = validation.parse(StepApplyWalletAccess, input)
+    data = schemas.parse(StepApplyWalletAccess, input)
     with repository.locked(f"technical-user:{data.technicalUserId}"):
         row = accounts.find(data.technicalUserId)
         if state.apply_wallet_outcome(row, data.outcome, data.walletAccountRef):
@@ -124,7 +124,7 @@ def apply_wallet_access(input: dict) -> dict:
 
 
 def delete(input: dict) -> dict:
-    data = validation.parse(StepTechnicalUserRef, input)
+    data = schemas.parse(StepTechnicalUserRef, input)
     with repository.locked(f"technical-user:{data.technicalUserId}"):
         row = accounts.find(data.technicalUserId)
         if row["status"] != Status.DELETED:
@@ -175,7 +175,7 @@ def _deactivate(row: TechnicalUserRecord, actor: Actor) -> None:
 
 
 def disable_company_technical_users(input: dict) -> dict:
-    company_id, actor = validation.parse(StepCompanyRef, input).companyId, Actor.process(input)
+    company_id, actor = schemas.parse(StepCompanyRef, input).companyId, Actor.process(input)
     with repository.locked(f"company:{company_id}"):
         _each_locked(repository.find(owner_company_id=company_id, statuses=LIVE_STATUSES, disabled=False),
                      lambda row: not row["disabled"] and row["status"] in LIVE_STATUSES,
@@ -186,7 +186,7 @@ def disable_company_technical_users(input: dict) -> dict:
 
 
 def enable_company_technical_users(input: dict) -> dict:
-    company_id, actor = validation.parse(StepCompanyRef, input).companyId, Actor.process(input)
+    company_id, actor = schemas.parse(StepCompanyRef, input).companyId, Actor.process(input)
     with repository.locked(f"company:{company_id}"):
         _each_locked(repository.find(owner_company_id=company_id, statuses=LIVE_STATUSES, disabled=True),
                      lambda row: row["disabled"] and row["status"] in LIVE_STATUSES,
@@ -197,7 +197,7 @@ def enable_company_technical_users(input: dict) -> dict:
 
 
 def disable_subscription_technical_users(input: dict) -> dict:
-    subscription_id = validation.parse(StepSubscriptionRef, input).offerSubscriptionId
+    subscription_id = schemas.parse(StepSubscriptionRef, input).offerSubscriptionId
     actor = Actor.process(input)
     with repository.locked(f"subscription:{subscription_id}"):
         _each_locked(repository.find(offer_subscription_id=subscription_id, statuses=(Status.PENDING, Status.ACTIVE)),

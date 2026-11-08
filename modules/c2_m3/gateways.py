@@ -29,22 +29,23 @@ import json
 from pathlib import Path
 
 from portal_common import neighbours
-from portal_common.problems import Problem
 
-MODULE = "c2-m3"
+from . import errors
+from .errors import MODULE
+
 _STUB_COMPANIES = Path(__file__).resolve().parent / "stub-companies.json"
 
 
 def company(company_id: str | None) -> dict:
     """C3-M1 `query_company`; 404 `not-found` if the company is unknown."""
     if not company_id:
-        raise Problem(MODULE, 404, "not-found", retryable=False)
+        raise errors.not_found()
     if neighbours.is_standin("c3-m1"):
         found = json.loads(_STUB_COMPANIES.read_text(encoding="utf-8"))["companies"].get(company_id)
     else:
         found = neighbours.query(MODULE, "c3-m1", "query_company", companyId=company_id)
     if not found:
-        raise Problem(MODULE, 404, "not-found", retryable=False)
+        raise errors.not_found()
     return found
 
 
@@ -52,7 +53,7 @@ def company_ready(company_id: str | None) -> dict:
     """A company that is `ACTIVE` and has a BPN (7.2, 8.1)."""
     found = company(company_id)
     if found.get("status") != "ACTIVE" or not found.get("bpn"):
-        raise Problem(MODULE, 409, "company-not-ready", retryable=False)
+        raise errors.company_not_ready()
     return found
 
 

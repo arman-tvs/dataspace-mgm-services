@@ -27,10 +27,8 @@ from __future__ import annotations
 
 import httpx
 
-from portal_common.problems import Problem
-
+from modules.c2_m3 import errors
 from modules.c2_m3 import iam as iam_package
-from modules.c2_m3.config import MODULE
 from modules.c2_m3.iam import IamConflict, IamError, TechnicalUserIam, UnknownRole
 
 
@@ -43,9 +41,8 @@ def call(function, *args, **kwargs):
     try:
         return function(*args, **kwargs)
     except UnknownRole as exc:
-        raise Problem(MODULE, 400, "role-not-assignable", detail=str(exc), retryable=False) from exc
+        raise errors.role_not_assignable(str(exc)) from exc
     except IamConflict as exc:   # a retry would meet the same foreign client again
-        raise Problem(MODULE, 502, "iam-error", detail=str(exc), retryable=False) from exc
+        raise errors.iam_error(str(exc), retryable=False) from exc
     except (IamError, httpx.HTTPError) as exc:
-        raise Problem(MODULE, 502, "iam-error", detail=f"Portal IAM request failed: {type(exc).__name__}",
-                      retryable=True) from exc
+        raise errors.iam_error(f"Portal IAM request failed: {type(exc).__name__}") from exc

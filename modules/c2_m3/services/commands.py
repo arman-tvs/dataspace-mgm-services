@@ -27,19 +27,18 @@ from __future__ import annotations
 
 import contextlib
 
-from portal_common.problems import Problem
-
-from modules.c2_m3 import config, gateways
-from modules.c2_m3.config import MODULE
+from modules.c2_m3 import config, errors, gateways, schemas
 from modules.c2_m3.models import Origin, TechnicalUserRecord, Viewer
 from modules.c2_m3.repository import repository
 from modules.c2_m3.schemas import SubscriptionCredentialsRequest, TechnicalUserCreate, TechnicalUserUpdate
-from . import accounts, audit, iam_access, projections, roles, state, validation
+from portal_common.problems import Problem
+
+from . import accounts, audit, iam_access, projections, roles, state
 from .audit import Actor
 
 
 def create_technical_user(*, company_id: str, body: dict, actor_sub: str) -> dict:
-    data = validation.parse(TechnicalUserCreate, body)
+    data = schemas.parse(TechnicalUserCreate, body)
     role_names = data.role_names
     # the company lock keeps a deactivation of the company from running between the check and the creation
     with repository.locked(f"company:{company_id}"):
@@ -76,7 +75,7 @@ def _update_roles(row: TechnicalUserRecord, data: TechnicalUserUpdate) -> tuple[
     current = set(iam_access.call(iam_access.iam().roles_for, row["iam_client_id"]))
     has_wallet = bool(current & config.wallet_roles()) or row["wallet_access"] != "NONE"
     if has_wallet != wallet_requested:
-        raise Problem(MODULE, 409, "wallet-role-change", retryable=False)
+        raise errors.wallet_role_change()
     return iam_access.call(iam_access.iam().set_roles, row["iam_client_id"], assigned)
 
 
@@ -95,7 +94,7 @@ def update_technical_user(*, id: str, company_id: str, body: dict, actor_sub: st
     with repository.locked(f"technical-user:{id}"):
         row = accounts.find(id)
         accounts.require_owner(row, company_id)
-        data = validation.parse(TechnicalUserUpdate, body)
+        data = schemas.parse(TechnicalUserUpdate, body)
         state.require_changeable(row)
         added, removed = _update_roles(row, data)
         recorded = bool(added or removed)
@@ -120,9 +119,9 @@ def delete_technical_user(*, id: str, company_id: str, actor_sub: str) -> tuple[
         viewer = accounts.viewer_of(row, company_id)
         state.require_deletable(row)
         if gateways.connector_uses(id):
-            raise Problem(MODULE, 409, "in-use", retryable=False)
+            raise errors.in_use()
         if row["origin"] == Origin.SUBSCRIPTION and gateways.subscription_is_active(row["offer_subscription_id"]):
-            raise Problem(MODULE, 409, "in-use", retryable=False)
+            raise errors.in_use()
         if state.needs_wallet_removal(row):
             state.request_removal(row)
             with repository.transaction():
@@ -147,11 +146,11 @@ def rotate_credentials(*, id: str, company_id: str, actor_sub: str) -> dict:
 def rotate_subscription_credentials(*, id: str, offer_subscription_id: str | None = None, **other) -> dict:
     request = {} if offer_subscription_id is None else {"offerSubscriptionId": offer_subscription_id}
     # the whole request is validated (undeclared fields are a 400) before the secret is touched
-    subscription_id = validation.parse(SubscriptionCredentialsRequest, request | other).offerSubscriptionId
+    subscription_id = schemas.parse(SubscriptionCredentialsRequest, request | other).offerSubscriptionId
     with repository.locked(f"technical-user:{id}"):
         row = repository.get(id)
         if row is None or row["origin"] != Origin.SUBSCRIPTION or row["offer_subscription_id"] != subscription_id:
-            raise Problem(MODULE, 404, "not-found", retryable=False)
+            raise errors.not_found()
         state.require_rotatable(row)
         secret = iam_access.call(iam_access.iam().rotate_secret, row["iam_client_id"])
         audit.record(row, "rotateSubscriptionCredentials", Actor.process())

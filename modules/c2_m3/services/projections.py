@@ -25,10 +25,10 @@
 """API shapes of a technical user (`TechnicalUserSummary`, `TechnicalUser`, `Credentials`)."""
 from __future__ import annotations
 
-from portal_common import tokens
-
 from modules.c2_m3 import config
 from modules.c2_m3.models import TechnicalUserRecord, Viewer, WalletAccess
+from portal_common import tokens
+
 from . import iam_access
 
 

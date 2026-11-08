@@ -24,6 +24,7 @@
 
 from modules.c2_m3 import iam as _iam
 from modules.c2_m3.repository import repository as _repository
+
 from .commands import (
     create_technical_user,
     delete_technical_user,

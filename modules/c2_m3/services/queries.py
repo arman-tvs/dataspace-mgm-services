@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from modules.c2_m3.models import DEFAULT_LIST_STATUSES, TechnicalUserRecord, Viewer
 from modules.c2_m3.repository import repository
+
 from . import accounts, projections, state, validation
 
 

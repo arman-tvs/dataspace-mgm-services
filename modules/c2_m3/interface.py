@@ -27,6 +27,7 @@ and the operations of people, which only the router calls. The logic lives in `s
 from __future__ import annotations
 
 from . import services
+from .errors import MODULE
 from .services import (
     create_technical_user,
     delete_technical_user,
@@ -39,8 +40,6 @@ from .services import (
     rotate_credentials,
     update_technical_user,
 )
-
-MODULE = "c2-m3"
 
 __all__ = [
     "MODULE", "apply_wallet_access", "check_technical_user", "create_for_subscription", "create_technical_user",
@@ -91,3 +90,9 @@ def rotate_subscription_credentials(*, id: str, offerSubscriptionId: str | None 
 def list_technical_roles(*, lang: str | None = None, **_other) -> list[dict]:
     """9.3: all roles of the technical roles client."""
     return services.list_technical_roles(lang=lang)
+
+
+# -- events (router.on_event) ---------------------------------------------------------------------
+def handle_event(event: dict) -> None:
+    """Replays the wallet flows when `PROCESS_STUB=true` (README 11.3); every other event is ignored."""
+    services.handle_event(event)

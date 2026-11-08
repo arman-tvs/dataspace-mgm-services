@@ -22,35 +22,13 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: GitHub Copilot (Claude Sonnet 5.5)
 #################################################################################
-"""Input checks of the operations and steps (README 7 and 8): every failure is 400 `validation`."""
+"""Input checks of the operations and steps (README 7 and 8) beyond the schemas: every failure is 400 `validation`.
+Checking a body against its `openapi.yaml` schema is `schemas.parse` (the HTTP models stay at the edge, ADR-0003)."""
 from __future__ import annotations
 
-from typing import TypeVar
-
-from pydantic import BaseModel, ValidationError
-
-from portal_common.problems import Problem
-
-from modules.c2_m3.config import MODULE
-
-Model = TypeVar("Model", bound=BaseModel)
-_MAX_ISSUES = 5
-
-
-def invalid(detail: str) -> Problem:
-    return Problem(MODULE, 400, "validation", detail=detail, retryable=False)
-
-
-def parse(model: type[Model], data: object) -> Model:
-    """Checks `data` against the pydantic model of an `openapi.yaml` schema (`schemas.py`)."""
-    try:
-        return model.model_validate(data)
-    except ValidationError as exc:
-        issues = exc.errors(include_url=False, include_input=False, include_context=False)   # no input values
-        raise invalid("; ".join(f"{'.'.join(str(part) for part in issue['loc']) or 'body'}: {issue['msg']}"
-                                for issue in issues[:_MAX_ISSUES])) from exc
+from modules.c2_m3 import errors
 
 
 def validate_page(page: int, size: int) -> None:
     if page < 0 or not 1 <= size <= 100:
-        raise invalid("page must be >= 0 and size must be 1..100")
+        raise errors.validation("page must be >= 0 and size must be 1..100")
