@@ -38,7 +38,6 @@ import base64
 import datetime as dt
 import json
 import time
-from typing import Any
 
 import httpx
 import jwt
@@ -113,7 +112,7 @@ def _key_for(kid: str | None) -> dict:
     return key
 
 
-def _moment(value: Any, field: str) -> dt.datetime:
+def _moment(value: object, field: str) -> dt.datetime:
     if not isinstance(value, (int, float)):
         raise _invalid("claims", f"{field} is not a numeric date")
     return dt.datetime.fromtimestamp(value, dt.UTC)

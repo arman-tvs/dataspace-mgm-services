@@ -41,7 +41,6 @@ import copy
 import datetime as dt
 import hashlib
 import uuid
-from typing import Any
 
 from .store import (
     CHANGE_REQUEST_STATUSES,
@@ -77,7 +76,7 @@ def _copy(row: dict | None) -> dict | None:
     return copy.deepcopy(row) if row is not None else None
 
 
-def _check_enum(value: Any, allowed: tuple[str, ...], field: str) -> None:
+def _check_enum(value: str | None, allowed: tuple[str, ...], field: str) -> None:
     if value is not None and value not in allowed:
         raise ValueError(f"{field}: {value!r} is not one of {', '.join(allowed)}")
 
@@ -88,7 +87,7 @@ def _check_known(company_id: str) -> dict:
     return companies[company_id]
 
 
-def _checked_bpn(bpn: Any, *, company_id: str | None, status: str) -> str | None:
+def _checked_bpn(bpn: object, *, company_id: str | None, status: str) -> str | None:
     """Upper case and unique among the companies whose status is not `REJECTED` (README 5)."""
     if bpn in (None, ""):
         return None
@@ -178,8 +177,9 @@ def update_company(company_id: str, **fields) -> dict | None:
     return _copy(row)
 
 
-def find_companies(*, status: Any = None, name: Any = None, bpn: Any = None, has_bpn: Any = None,
-                   company_role: Any = None, core_data_source: Any = None, page: int = 0,
+def find_companies(*, status: str | list[str] | None = None, name: str | None = None, bpn: str | None = None,
+                   has_bpn: bool | None = None, company_role: str | None = None,
+                   core_data_source: str | None = None, page: int = 0,
                    size: int = 20) -> tuple[list[dict], int]:
     """7.10: filters, newest first, paged. `company_role` matches active roles only."""
     statuses = [status] if isinstance(status, str) else list(status or [])
@@ -330,14 +330,15 @@ def create_change_request(row: dict) -> dict:
     _check_enum(status, CHANGE_REQUEST_STATUSES, "status")
     if status == "OPEN" and open_change_request(company_id):
         raise ValueError(f"company {company_id} already has an open change request")
+    change_request_id: str = row.get("id") or str(uuid.uuid4())
     created = {
-        "id": row.get("id") or str(uuid.uuid4()), "company_id": company_id, "status": status,
+        "id": change_request_id, "company_id": company_id, "status": status,
         "changes": copy.deepcopy(row.get("changes") or {}), "comment": row.get("comment"),
         "requested_by": row.get("requested_by"), "decided_by": row.get("decided_by"),
         "decision_reason": row.get("decision_reason"),
         "created_at": row.get("created_at") or _now(), "closed_at": row.get("closed_at"),
     }
-    _change_requests[created["id"]] = created
+    _change_requests[change_request_id] = created
     return _copy(created)  # type: ignore[return-value]
 
 
@@ -346,7 +347,7 @@ def open_change_request(company_id: str) -> dict | None:
                  if row["company_id"] == company_id and row["status"] == "OPEN"), None)
 
 
-def list_change_requests(*, company_id: str | None = None, status: Any = None,
+def list_change_requests(*, company_id: str | None = None, status: str | list[str] | None = None,
                          page: int = 0, size: int = 20,
                          newest_first: bool = False) -> tuple[list[dict], int]:
     """7.5 (newest first) and 7.14 (oldest first, the default), paged."""
@@ -396,12 +397,13 @@ def add_document(change_request_id: str, *, file_name: str, media_type: str,
     if change_request_id not in _change_requests:
         raise ValueError(f"unknown change request: {change_request_id}")
     _check_enum(media_type, MEDIA_TYPES, "media_type")
-    row = {"id": str(uuid.uuid4()), "change_request_id": change_request_id,
+    document_id = str(uuid.uuid4())
+    row = {"id": document_id, "change_request_id": change_request_id,
            "file_name": file_name, "media_type": media_type,
            "size_bytes": len(content) if size_bytes is None else size_bytes,
            "sha256": sha256 or hashlib.sha256(content).hexdigest(),
            "content": content, "created_at": _now()}
-    _documents[row["id"]] = row
+    _documents[document_id] = row
     return _copy(row)  # type: ignore[return-value]
 
 

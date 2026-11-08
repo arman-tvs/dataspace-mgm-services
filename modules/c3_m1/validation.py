@@ -40,8 +40,8 @@ import json
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any
 
+from modules.c3_m1.errors import FieldError
 from portal_common import settings
 
 IDENTIFIER_TYPES = ("EUID", "EBWOID", "VAT_ID", "COMMERCIAL_REG_NUMBER", "LEI_CODE", "EORI")
@@ -99,17 +99,17 @@ _reference_cache: tuple[str, int, dict | None] | None = None
 
 
 # ------------------------------------------------------------------------ comparison (5, 6.3)
-def normalise(value: Any) -> str:
+def normalise(value: object) -> str:
     """NFKC, trimmed, inner whitespace collapsed to one space; case stays (6.3)."""
     return " ".join(unicodedata.normalize("NFKC", str(value)).split())
 
 
-def value_normalized(value: Any) -> str:
+def value_normalized(value: object) -> str:
     """Upper case without spaces, `.`, `-` and `/` (5, 6.4) — what the duplicate search compares."""
     return NORMALISE_STRIP.sub("", unicodedata.normalize("NFKC", str(value))).upper()
 
 
-def same_value(left: Any, right: Any) -> bool:
+def same_value(left: object, right: object) -> bool:
     """Comparison of 6.3: equal after normalisation, case ignored."""
     return normalise(left).casefold() == normalise(right).casefold()
 
@@ -164,11 +164,11 @@ def pattern_for(identifier_type: str, country_code: str | None) -> str | None:
 
 
 # ---------------------------------------------------------------------------------- helpers
-def _error(field: str, reason: str) -> dict:
+def _error(field: str, reason: str) -> FieldError:
     return {"field": field, "reason": reason}
 
 
-def _text(errors: list[dict], field: str, value: Any, *, required: bool = False,
+def _text(errors: list[FieldError], field: str, value: object, *, required: bool = False,
           min_length: int = 0, max_length: int | None = None, strip: bool = False) -> None:
     if value is None:
         if required:
@@ -207,10 +207,10 @@ def flat_fields(data: dict) -> dict:
 
 
 # --------------------------------------------------------------------------- company fields (5)
-def validate_company(data: dict, *, partial: bool = False) -> list[dict]:
+def validate_company(data: dict, *, partial: bool = False) -> list[FieldError]:
     """Field rules of README 5. `partial`: only the fields given are checked."""
     flat = flat_fields(data)
-    errors: list[dict] = []
+    errors: list[FieldError] = []
     _text(errors, "name", flat.get("name"), required=not partial, min_length=1,
           max_length=NAME_MAX, strip=True)
     _text(errors, "short_name", flat.get("short_name"), max_length=SHORT_NAME_MAX)
@@ -239,7 +239,7 @@ def validate_company(data: dict, *, partial: bool = False) -> list[dict]:
     return errors
 
 
-def validate_country_code(country_code: Any, *, required: bool = True) -> list[dict]:
+def validate_country_code(country_code: object, *, required: bool = True) -> list[FieldError]:
     if country_code in (None, ""):
         return [_error("country_code", "required")] if required else []
     if not isinstance(country_code, str) or not COUNTRY_PATTERN.match(country_code):
@@ -251,10 +251,10 @@ def validate_country_code(country_code: Any, *, required: bool = True) -> list[d
 
 
 # ------------------------------------------------------------------------------- identifiers (6.4)
-def validate_identifier(entry: dict, country_code: str | None, field: str) -> list[dict]:
+def validate_identifier(entry: dict, country_code: str | None, field: str) -> list[FieldError]:
     if not isinstance(entry, dict):
         return [_error(field, "type")]
-    errors: list[dict] = []
+    errors: list[FieldError] = []
     kind, value = entry.get("type"), entry.get("value")
     if kind in (None, ""):
         errors.append(_error(f"{field}.type", "required"))
@@ -282,14 +282,14 @@ def _matches(pattern: str, value: str) -> bool:
         return True
 
 
-def validate_identifiers(identifiers: Any, country_code: str | None,
-                         *, allow_business_wallet: bool = True) -> list[dict]:
+def validate_identifiers(identifiers: object, country_code: str | None,
+                         *, allow_business_wallet: bool = True) -> list[FieldError]:
     """At least one identifier, at most one per type, format per country (6.4)."""
     if identifiers is None:
         return [_error("identifiers", "missing")]
     if not isinstance(identifiers, list):
         return [_error("identifiers", "type")]
-    errors: list[dict] = []
+    errors: list[FieldError] = []
     if not identifiers:
         errors.append(_error("identifiers", "missing"))
     seen: set[str] = set()
@@ -308,10 +308,10 @@ def validate_identifiers(identifiers: Any, country_code: str | None,
 
 
 # ------------------------------------------------------------------ change request, docs (7.4)
-def validate_change_request(data: dict, country_code: str | None) -> list[dict]:
+def validate_change_request(data: dict, country_code: str | None) -> list[FieldError]:
     """7.4: at least one change, comment 1..1000, identifiers complete with source `DECLARED`."""
     flat = flat_fields(data)
-    errors: list[dict] = []
+    errors: list[FieldError] = []
     has_name = flat.get("name") not in (None, "")
     has_address = any(flat.get(field) not in (None, "") for field in ADDRESS_FIELDS)
     if has_address:
@@ -330,33 +330,33 @@ def validate_change_request(data: dict, country_code: str | None) -> list[dict]:
     return errors
 
 
-def validate_comment(comment: Any) -> list[dict]:
-    errors: list[dict] = []
+def validate_comment(comment: object) -> list[FieldError]:
+    errors: list[FieldError] = []
     _text(errors, "comment", comment, required=True, min_length=1, max_length=COMMENT_MAX)
     return errors
 
 
-def validate_reason(reason: Any, *, max_length: int = REASON_MAX) -> list[dict]:
+def validate_reason(reason: object, *, max_length: int = REASON_MAX) -> list[FieldError]:
     """Justification 1..500, for decisions 1..1000 (7.13, 7.18)."""
-    errors: list[dict] = []
+    errors: list[FieldError] = []
     _text(errors, "reason", reason, required=True, min_length=1, max_length=max_length)
     return errors
 
 
-def validate_decision_reason(reason: Any) -> list[dict]:
+def validate_decision_reason(reason: object) -> list[FieldError]:
     return validate_reason(reason, max_length=DECISION_REASON_MAX)
 
 
 # --------------------------------------------------------------------------- documents (5, 7.4)
-def validate_file_name(file_name: Any) -> list[dict]:
-    errors: list[dict] = []
+def validate_file_name(file_name: object) -> list[FieldError]:
+    errors: list[FieldError] = []
     _text(errors, "file_name", file_name, required=True, min_length=1, max_length=FILE_NAME_MAX)
     if isinstance(file_name, str) and ("/" in file_name or "\\" in file_name):
         errors.append(_error("file_name", "path-parts"))
     return errors
 
 
-def detect_media_type(content: Any) -> str | None:
+def detect_media_type(content: object) -> str | None:
     """Media type from the first bytes, `None` for anything else (README 4, 5)."""
     if not isinstance(content, (bytes, bytearray)):
         return None
@@ -369,8 +369,8 @@ def detect_media_type(content: Any) -> str | None:
     return None
 
 
-def validate_document(file_name: Any, content: Any, *, stated_media_type: str | None = None,
-                      max_bytes: int | None = None) -> list[dict]:
+def validate_document(file_name: object, content: object, *, stated_media_type: str | None = None,
+                      max_bytes: int | None = None) -> list[FieldError]:
     """File name rules and type from the bytes; `stated_media_type` is ignored on purpose."""
     del stated_media_type
     errors = validate_file_name(file_name)
@@ -388,7 +388,7 @@ def validate_document(file_name: Any, content: Any, *, stated_media_type: str | 
 
 
 # --------------------------------------------------------------------------------- misc (6.5)
-def validate_company_role(company_role: Any, catalogue: dict | None = None) -> list[dict]:
+def validate_company_role(company_role: object, catalogue: dict | None = None) -> list[FieldError]:
     """Role must be in the catalogue (7.8, 7.9)."""
     if not company_role:
         return [_error("companyRole", "required")]
@@ -397,13 +397,13 @@ def validate_company_role(company_role: Any, catalogue: dict | None = None) -> l
     return []
 
 
-def validate_media_type(media_type: Any) -> list[dict]:
+def validate_media_type(media_type: object) -> list[FieldError]:
     if media_type not in MEDIA_TYPES:
         return [_error("media_type", "unknown")]
     return []
 
 
-def validate_bpn(bpn: Any) -> list[dict]:
+def validate_bpn(bpn: object) -> list[FieldError]:
     if not isinstance(bpn, str) or not BPN_PATTERN.match(bpn.upper()):
         return [_error("bpn", "format")]
     return []

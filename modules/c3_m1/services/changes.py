@@ -28,6 +28,7 @@ how a merge is validated, which identifiers the wallet owns."""
 from __future__ import annotations
 
 from modules.c3_m1 import store, validation
+from modules.c3_m1.errors import FieldError
 
 
 def _validate_merge(row: dict, body: dict) -> dict:
@@ -76,7 +77,7 @@ def _identifier_core_changed(row: dict, identifiers: list[dict]) -> bool:
     return any(not validation.same_value(stored[kind], value) for kind, value in now.items())
 
 
-def _wallet_identifier_conflict(row: dict, identifiers: list[dict]) -> list[dict]:
+def _wallet_identifier_conflict(row: dict, identifiers: list[dict]) -> list[FieldError]:
     """Identifiers of the list whose stored source is `BUSINESS_WALLET` (400, 7.4 point 4, 7.12 point 3)."""
     stored = {entry["type"] for entry in store.list_identifiers(row["id"])
               if entry["source"] == "BUSINESS_WALLET"}

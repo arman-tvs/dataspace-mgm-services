@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 from modules.c3_m1 import config, errors, store, validation
+from modules.c3_m1.errors import FieldError
 
 from .common import company_internal
 
@@ -118,7 +119,7 @@ def find_identifier_matches(*, identifiers: list[dict], name: str | None = None,
 
 def _check_match_request(identifiers: list[dict], wanted_statuses: list[str]) -> None:
     """400 `validation` for 9.3: 1 to 10 identifiers of known types with values, known statuses."""
-    invalid = []
+    invalid: list[FieldError] = []
     if not 1 <= len(identifiers) <= 10:
         invalid.append({"field": "identifiers", "reason": "1 to 10 entries"})
     for entry in identifiers:

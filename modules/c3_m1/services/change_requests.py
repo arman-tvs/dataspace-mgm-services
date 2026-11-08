@@ -27,7 +27,7 @@
 from __future__ import annotations
 
 from modules.c3_m1 import config, errors, store, validation
-from modules.c3_m1.errors import MODULE
+from modules.c3_m1.errors import MODULE, FieldError
 from portal_common import events
 
 from .changes import _changed_fields, _identifier_core_changed, _validate_merge, _wallet_identifier_conflict
@@ -144,7 +144,7 @@ def _check_requested_changes(companyId: str, row: dict, data: dict, changes: dic
 
 def _check_documents(documents: list[tuple[str, bytes, str | None]]) -> None:
     """400 `document-invalid`: 1 to CHANGE_REQUEST_MAX_DOCUMENTS documents of an allowed type and size."""
-    invalid = []
+    invalid: list[FieldError] = []
     if not 1 <= len(documents) <= config.change_request_max_documents():
         maximum = config.change_request_max_documents()
         invalid.append({"field": "documents", "reason": f"1 to {maximum} documents"})
