@@ -84,7 +84,7 @@
       "mypy": 45,
       "neighbours": 0,
       "problems": 0,
-      "ruff": 17
+      "ruff": 0
     },
     "modules/c3_m2": {
       "file-size": 1,
