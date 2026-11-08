@@ -68,7 +68,11 @@ and 7a first. Do not change code during the review. Report what you find.
     hints on every function; names that say what a thing is; no duplicated logic (the same mapping
     or check written twice); comments that explain why, with the spec section. The gate counts the
     first three; judge the rest by reading.
-19. **Cases of ADR-0003 section 5:** every file has a layer name; webhooks are routes; adapters do not
+19. **HTTP layer (ADR-0003 "HTTP layer (FastAPI)"):** bodies and responses are `schemas.py` models
+    following `openapi.yaml`; `operation_id` is the spec's; `status_code` and the README 12 errors
+    (`responses=`) are declared; handlers are sync unless everything is awaited; token, permission
+    and scope are dependencies. The gate counts `http-body`, `http-route` and `contract`.
+20. **Cases of ADR-0003 section 5:** every file has a layer name; webhooks are routes; adapters do not
     import the service (a callback port instead); no `Any` inside types either (`dict[str, Any]`);
     tests do not reach into internals.
 

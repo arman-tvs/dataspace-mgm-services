@@ -119,6 +119,10 @@ The spec defines the outside of a module; the inside follows
 - Limits: at most 500 lines per file, 60 lines and a complexity of 10 per function, type hints on every function.
 - In `interface.py` write each step and query as a one-line `def` that calls the service; do not re-export with
   `from .service import ...` (`module-map` counts only functions defined with `def`).
+- HTTP layer (FastAPI): request bodies and responses are Pydantic models of `schemas.py` that follow `openapi.yaml`
+  (never `body: dict = Body(...)`), `operation_id=` is the spec's `operationId`, handlers are sync `def`, token and
+  permission are dependencies. The gate compares the generated OpenAPI with `openapi.yaml` (`contract`). Reference:
+  C3-M2.
 - Every file has a layer name (`gateways.py`, not `calls.py`; token validation and DID resolution in `adapters/`);
   webhooks of external systems are routes in `router.py`; a stand-in adapter calls back through a registered port,
   never by importing the service. More cases: ADR-0003 section 5.

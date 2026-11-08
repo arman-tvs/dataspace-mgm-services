@@ -52,6 +52,21 @@ Protocols ("ports") are used only where something is really exchanged: the store
 systems (Keycloak, wallet providers, the CSP). Neighbour modules and events need no own port, because
 `portal_common.neighbours` and `portal_common.events` already hide in-process, HTTP and stand-in (FRAMEWORK 4.7).
 
+**HTTP layer (FastAPI).** `router.py` and `schemas.py` follow FastAPI's own conventions, so Swagger shows the
+contract of `openapi.yaml` and FastAPI checks it. C3-M2 (`router.py`, `schemas.py`) is the reference.
+
+| Rule | Why | Gate check |
+|---|---|---|
+| Request bodies are Pydantic models in `schemas.py` with the field names, required fields and enums of `openapi.yaml`, never `body: dict = Body(...)` | FastAPI validates the input (400 Problem Details through the route class), Swagger shows the fields | `http-body` |
+| Every route has a response model: `response_model=` or a precise return type (a model, a `TypedDict` such as `StepReply`); `status_code=204` needs none | Swagger shows the answer; FastAPI drops fields that are not in the contract | `http-route` |
+| `operation_id=` is the spec's `operationId` | Swagger, generated clients and the spec use the same names; otherwise FastAPI invents one | `http-route`, `contract` |
+| The generated OpenAPI of the module matches its `openapi.yaml`: the same `operationId`, a typed body with the spec's required fields, a typed response | Code and spec cannot drift apart unnoticed | `contract` |
+| `status_code=` where the spec answers something else than 200 (201, 202, 204) | The status is part of the contract | review |
+| Errors of README section 12 documented with `responses=` | Swagger shows the Problem Details a client can get | review |
+| Handlers are sync `def`; `async def` only when everything inside is awaited | Modules call blocking code (sync `httpx`, locks, the store); a blocking call in `async def` stops the whole server | review |
+| Token, permission and scope are dependencies (`_: Claims = standin.perm(...)` or `tokens.require_spec`), not code in the handler | They show as security in Swagger; tests replace them with `app.dependency_overrides` instead of monkeypatching | review |
+| New parameters use `Annotated` (`companyId: Annotated[UUID, Path()]`, `body: Annotated[Model, Body()]`) | FastAPI's current style; the old defaults (`= Body(...)`) are why ruff's `B008` is switched off | review |
+
 ### 2. Data
 
 | Where | Type |

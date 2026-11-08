@@ -50,7 +50,7 @@ Before you write code, list the files of the module and the job of each, followi
 
 | File | What goes in for this module |
 |---|---|
-| `router.py`, `schemas.py` | the routes of step 2 and their Pydantic request and response models |
+| `router.py`, `schemas.py` | the routes of step 2 with `operation_id=` the spec's `operationId`, and their Pydantic request and response models from `openapi.yaml` (ADR-0003 "HTTP layer (FastAPI)"; C3-M2 is the reference) |
 | `interface.py` | the steps and queries of step 2, each delegating to the service |
 | `service.py` (or `services/`) | the rules of README sections 6 to 9; dataclasses for the objects of section 5 |
 | `store.py` | a repository `Protocol` for the tables of section 5, with an in-memory implementation |
