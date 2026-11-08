@@ -65,13 +65,13 @@
       "ruff": 41
     },
     "modules/c2_m3": {
-      "contract": 45,
+      "contract": 28,
       "http-body": 3,
-      "http-route": 23,
-      "layers": 2,
-      "mypy": 31,
-      "problems": 20,
-      "ruff": 23
+      "http-route": 21,
+      "layers": 0,
+      "mypy": 0,
+      "problems": 0,
+      "ruff": 0
     },
     "modules/c3_m1": {
       "contract": 69,
