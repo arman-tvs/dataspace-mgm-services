@@ -37,13 +37,13 @@
     },
     "modules/c1_m2": {
       "contract": 50,
-      "file-size": 1,
+      "file-size": 0,
       "http-body": 7,
       "http-route": 47,
-      "mypy": 45,
-      "neighbours": 1,
-      "problems": 44,
-      "ruff": 39
+      "mypy": 24,
+      "neighbours": 0,
+      "problems": 0,
+      "ruff": 0
     },
     "modules/c1_m3": {
       "contract": 16,
