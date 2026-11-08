@@ -53,13 +53,13 @@
       "mypy": 76,
       "neighbours": 1,
       "problems": 1,
-      "ruff": 38
+      "ruff": 41
     },
     "modules/c2_m3": {
       "layers": 2,
       "mypy": 31,
       "problems": 20,
-      "ruff": 17
+      "ruff": 23
     },
     "modules/c3_m1": {
       "file-size": 2,
@@ -81,7 +81,7 @@
       "mypy": 31,
       "neighbours": 2,
       "problems": 15,
-      "ruff": 4
+      "ruff": 6
     },
     "modules/c4_m2": {
       "file-size": 1,
@@ -89,7 +89,7 @@
       "mypy": 26,
       "neighbours": 2,
       "problems": 11,
-      "ruff": 12
+      "ruff": 27
     },
     "modules/c6_m1": {
       "layers": 2,
@@ -118,7 +118,7 @@
       "ruff": 2
     },
     "tests": {
-      "ruff": 255
+      "ruff": 260
     },
     "tools": {
       "function-size": 1,
