@@ -36,7 +36,7 @@ import os
 from fastapi import APIRouter, Body, Response
 
 from portal_common import problems, standin
-from portal_common.problems import Problem
+from . import errors
 
 MODULE = "c4-m2"
 DEFAULT_CALLBACK_CLIENT = "sa-div-callback"
@@ -45,7 +45,7 @@ DEFAULT_CALLBACK_CLIENT = "sa-div-callback"
 def _authorize(claims: dict) -> None:
     client = os.environ.get("SAP_DIV_CALLBACK_CLIENT_ID", "").strip() or DEFAULT_CALLBACK_CLIENT
     if claims.get("azp") != client:
-        raise Problem(MODULE, 403, "forbidden", detail="the calling client is not the callback client of SAP DIV")
+        raise errors.forbidden("the calling client is not the callback client of SAP DIV")
 
 
 def sap_div_router() -> APIRouter:

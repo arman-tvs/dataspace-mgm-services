@@ -37,6 +37,7 @@ import uuid
 
 from portal_common import csp
 
+from . import errors
 from . import providers_common as common
 
 PROVIDER = "CSP"
@@ -131,18 +132,18 @@ class CspAdapter:
         try:
             status, answer = csp.request(url, method, path, body)
         except csp.CspUnavailable as error:
-            raise common.upstream_error(f"CSP wallet API not reachable: {error}") from error
+            raise errors.upstream_error(f"CSP wallet API not reachable: {error}") from error
         except (OSError, ValueError, KeyError) as error:
-            raise common.upstream_error(f"CSP sign-in failed: {type(error).__name__}") from error
+            raise errors.upstream_error(f"CSP sign-in failed: {type(error).__name__}") from error
         return status, answer if isinstance(answer, dict) else None
 
     def _created(self, status: int, answer: dict | None, what: str, keys: tuple[str, ...] = ()) -> dict:
         if status == 403:
-            raise common.provider_rejected(f"the CSP rejected the {what}")
+            raise errors.provider_rejected(f"the CSP rejected the {what}")
         if status != 201 or not answer:
-            raise common.upstream_error(f"CSP wallet API answered {status}")
+            raise errors.upstream_error(f"CSP wallet API answered {status}")
         if any(key not in answer for key in keys):
-            raise common.upstream_error("CSP wallet API answered without the expected fields")
+            raise errors.upstream_error("CSP wallet API answered without the expected fields")
         return answer
 
     def order_wallet(self, order: dict) -> dict:
@@ -174,5 +175,5 @@ class CspAdapter:
     def order_account_deletion(self, account: dict) -> dict:
         status, _ = self._call("DELETE", f"/wallets/{account['bpn']}/accounts/{account['wallet_account_ref']}")
         if status not in (204, 404):                    # README 11.3: 404 counts as deleted
-            raise common.upstream_error(f"CSP wallet API answered {status}")
+            raise errors.upstream_error(f"CSP wallet API answered {status}")
         return {"result": "DELETED"}

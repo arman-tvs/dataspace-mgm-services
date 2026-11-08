@@ -39,9 +39,8 @@ from types import ModuleType
 from typing import Any
 
 from portal_common import events, neighbours
-from portal_common.problems import Problem
 
-from . import crypto, did
+from . import crypto, did, errors
 from .store import InMemoryStore, WalletStore
 
 log = logging.getLogger(__name__)
@@ -128,9 +127,6 @@ def _iso(value: Any) -> str | None:
     moment = _when(value)
     return moment.isoformat() if moment else None
 
-
-def _problem(status: int, name: str, detail: str | None = None, retryable: bool = False) -> Problem:
-    return Problem(MODULE, status, name, detail=detail, retryable=retryable)
 
 
 def providers_module() -> ModuleType | None:
@@ -262,7 +258,7 @@ def check_did(wallet: dict) -> dict:
 def _validate_create_input(input: dict) -> tuple[str, str | None]:
     """README 8.1 step 1: the input of the step; returns `(companyId, provider or None)`."""
     if not isinstance(input, dict):
-        raise _problem(400, "validation", "the input must be a JSON object")
+        raise errors.validation("the input must be a JSON object")
     for name in ("processId", "stepRunId", "companyId"):
         value = input.get(name)
         try:
@@ -270,14 +266,14 @@ def _validate_create_input(input: dict) -> tuple[str, str | None]:
                 raise ValueError
             uuid.UUID(value)
         except ValueError:
-            raise _problem(400, "validation", f"{name} must be a UUID") from None
+            raise errors.validation(f"{name} must be a UUID") from None
     provider = input.get("provider")
     if provider is None:
         return input["companyId"], None
     if provider == "BRING_YOUR_OWN":
-        raise _problem(400, "provider-not-enabled", "BRING_YOUR_OWN is not available yet")
+        raise errors.provider_not_enabled("BRING_YOUR_OWN is not available yet")
     if provider not in PROVIDERS:
-        raise _problem(400, "validation", "provider must be SAP_DIV, IDENTITY_HUB or CSP")
+        raise errors.validation("provider must be SAP_DIV, IDENTITY_HUB or CSP")
     return input["companyId"], provider
 
 
@@ -285,7 +281,7 @@ def _choose_provider(requested: str | None) -> str:
     """README 6.1: the provider of the input, otherwise `DEFAULT_PROVIDER`; it must be enabled."""
     provider = requested or default_provider()
     if provider not in enabled_providers():
-        raise _problem(400, "provider-not-enabled", f"{provider} is not in ENABLED_PROVIDERS")
+        raise errors.provider_not_enabled(f"{provider} is not in ENABLED_PROVIDERS")
     return provider
 
 
@@ -312,7 +308,7 @@ def _order(wallet: dict, company: dict) -> dict:
     """README 8.1 step 4: the order to the adapter. `provider_ordered_at` is set only after it accepted."""
     providers = providers_module()
     if providers is None:
-        raise _problem(502, "upstream-error", "no provider adapter available", retryable=True)
+        raise errors.upstream_error("no provider adapter available")
     answer = providers.get(wallet["provider"]).order_wallet({
         "company_id": wallet["company_id"], "bpn": wallet["bpn"], "company_name": company.get("name"),
         "attempt": wallet["attempt"], "wallet_id": wallet["id"]})
@@ -353,14 +349,14 @@ def create_wallet(input: dict) -> dict:
     with store.transaction(company_id):
         company = get_company(company_id)
         if company is None:
-            raise _problem(404, "not-found", "company not found")
+            raise errors.not_found("company not found")
         if not company.get("bpn"):
-            raise _problem(409, "company-not-ready", "the company has no BPN yet")
+            raise errors.company_not_ready("the company has no BPN yet")
         bpn = str(company["bpn"]).upper()
         wallet = store.get_wallet(company_id)
         other = store.find_wallet_by_bpn(bpn)
         if (wallet and wallet["bpn"] != bpn) or (other and other["company_id"] != company_id):
-            raise _problem(409, "conflict", "the BPN does not match the existing wallets")
+            raise errors.conflict("the BPN does not match the existing wallets")
         state = "RUNNING"
         if wallet is None:
             wallet = _save(_new_wallet(company_id, bpn, _choose_provider(requested)))
@@ -423,21 +419,21 @@ def accept_wallet_callback(bpn: str, body: dict, claims: dict | str | None) -> N
     raises `Problem` for 400, 404 and 409. Every accepted callback, also a duplicate, is audited."""
     problem = _callback_body_problem(body)
     if problem:
-        raise _problem(400, "validation", problem)
+        raise errors.validation(problem)
     store = get_store()
     found = store.find_wallet_by_bpn(bpn)
     if found is None or found["provider"] != "SAP_DIV":
-        raise _problem(404, "not-found", "no SAP DIV wallet for this BPN")
+        raise errors.not_found("no SAP DIV wallet for this BPN")
     with store.transaction(found["company_id"]):
         wallet = store.get_wallet(found["company_id"])
         if wallet is None or wallet["provider"] != "SAP_DIV":
-            raise _problem(404, "not-found", "no SAP DIV wallet for this BPN")
+            raise errors.not_found("no SAP DIV wallet for this BPN")
         announced = body["did"]
         if wallet["status"] in ("VALIDATING", "ACTIVE"):
             if (wallet.get("did") or "").lower() != announced.lower():
-                raise _problem(409, "conflict", "the wallet already has another DID")
+                raise errors.conflict("the wallet already has another DID")
         elif wallet["status"] != "REQUESTED":
-            raise _problem(409, "invalid-state", "the wallet is not waiting for a callback; a new attempt is needed")
+            raise errors.invalid_state("the wallet is not waiting for a callback; a new attempt is needed")
         elif not did.check_form("SAP_DIV", announced, wallet["bpn"]):
             _fail(wallet, "DID_MISMATCH")
         elif not _callback_document_valid(body["didDocument"]):
@@ -533,7 +529,7 @@ def _issuance_mode(provider: str) -> str:
 def _wallet_or_404(company_id: str) -> dict:
     wallet = get_store().get_wallet(company_id)
     if wallet is None:
-        raise _problem(404, "not-found", "no wallet for this company")
+        raise errors.not_found("no wallet for this company")
     return wallet
 
 
@@ -566,10 +562,10 @@ def holder_access(company_id: str, claims: dict | str | None = None) -> dict:
     `claims` are the token claims over HTTP; in the same process the entry holds the name of C4-M1."""
     wallet = _wallet_or_404(company_id)
     if wallet["status"] != "ACTIVE":
-        raise _problem(409, "wallet-not-active", "the wallet is not ACTIVE")
+        raise errors.wallet_not_active("the wallet is not ACTIVE")
     access = wallet_secret(wallet["id"], HOLDER_ACCESS)
     if access is None:
-        raise _problem(409, "wallet-not-active", "the wallet has no holder access")
+        raise errors.wallet_not_active("the wallet has no holder access")
     base = {"issuanceMode": _issuance_mode(wallet["provider"]), "companyId": wallet["company_id"],
             "bpn": wallet["bpn"], "did": wallet["did"], "provider": wallet["provider"]}
     if wallet["provider"] == "SAP_DIV":

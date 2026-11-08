@@ -42,9 +42,8 @@ from typing import Any
 from fastapi import APIRouter, Body, Response
 
 from portal_common import events, problems, standin
-from portal_common.problems import Problem
 
-from . import crypto, providers, service
+from . import crypto, errors, providers, service
 
 MODULE = "c4-m2"
 REQUESTED, ACTIVE, FAILED, DELETING, DELETED = "REQUESTED", "ACTIVE", "FAILED", "DELETING", "DELETED"
@@ -52,9 +51,6 @@ NONE, AVAILABLE, RETRIEVED, EXPIRED = "NONE", "AVAILABLE", "RETRIEVED", "EXPIRED
 
 
 # --------------------------------------------------------------------------------------- helpers
-def _problem(status: int, name: str, detail: str | None = None, retryable: bool = False) -> Problem:
-    return Problem(MODULE, status, name, detail=detail, retryable=retryable)
-
 
 def _number(name: str, default: float) -> float:
     """A positive number from the environment at call time; the default for unset or unusable values."""
@@ -92,14 +88,14 @@ def _uuid(value: Any, name: str) -> str:
             raise ValueError
         uuid.UUID(value)
     except ValueError:
-        raise _problem(400, "validation", f"{name} must be a UUID") from None
+        raise errors.validation(f"{name} must be a UUID") from None
     return value
 
 
 def _validate(input: dict) -> tuple[str, str]:
     """README 8.2, 8.3 input: `processId`, `stepRunId`, `technicalUserId`, `companyId`; returns the last two."""
     if not isinstance(input, dict):
-        raise _problem(400, "validation", "the input must be a JSON object")
+        raise errors.validation("the input must be a JSON object")
     for name in ("processId", "stepRunId"):
         _uuid(input.get(name), name)
     return _uuid(input.get("technicalUserId"), "technicalUserId"), _uuid(input.get("companyId"), "companyId")
@@ -143,7 +139,7 @@ def _current(technical_user_id: str) -> dict:
     """README 7.2 step 2: the row with a status other than `DELETED`, otherwise the latest; none is 404."""
     account = service.get_store().get_account(technical_user_id)
     if account is None:
-        raise _problem(404, "not-found", "no wallet account for this technical user")
+        raise errors.not_found("no wallet account for this technical user")
     return account
 
 
@@ -156,7 +152,7 @@ def view_wallet_account(technical_user_id: str, claims: dict) -> dict:
     """`GET /technical-users/{id}/wallet-account` (README 7.2): another company's account stays invisible (404)."""
     account = _current(technical_user_id)
     if not claims.get("company_id") or claims["company_id"] != account["company_id"]:
-        raise _problem(404, "not-found", "no wallet account for this technical user")
+        raise errors.not_found("no wallet account for this technical user")
     return _view(account)
 
 
@@ -201,12 +197,12 @@ def _check_preconditions(company_id: str) -> dict:
     """README 8.2 preconditions: the wallet is `ACTIVE` (read in the own table), the company is `ACTIVE` at C3-M1."""
     wallet = service.get_wallet(company_id)
     if wallet is None or wallet["status"] != "ACTIVE":
-        raise _problem(409, "wallet-not-active", "the wallet of the company is not ACTIVE")
+        raise errors.wallet_not_active("the wallet of the company is not ACTIVE")
     company = service.get_company(company_id)
     if company is None:
-        raise _problem(404, "not-found", "company not found")
+        raise errors.not_found("company not found")
     if company.get("status") != "ACTIVE":
-        raise _problem(409, "company-not-active", "no new wallet account for a company that is not ACTIVE")
+        raise errors.company_not_active("no new wallet account for a company that is not ACTIVE")
     return wallet
 
 
@@ -246,11 +242,11 @@ def create_wallet_account(input: dict) -> dict:
         state = "RUNNING"
         if account is not None:
             if account["company_id"] != company_id:
-                raise _problem(409, "conflict", "the technical user has a wallet account of another company")
+                raise errors.conflict("the technical user has a wallet account of another company")
             if account["status"] in (ACTIVE, FAILED):
                 return _reply(input, "create-wallet-account", "DONE", account)
             if account["status"] == DELETING:
-                raise _problem(409, "invalid-state", "the wallet account is being deleted")
+                raise errors.invalid_state("the wallet account is being deleted")
             if account.get("provider_ordered_at"):
                 return _reply(input, "create-wallet-account", state, account)
         wallet = _check_preconditions(company_id)
@@ -283,9 +279,9 @@ def delete_wallet_account(input: dict) -> dict:
     with _lock(technical_user_id):
         account = service.get_store().get_account(technical_user_id)
         if account is not None and account["status"] == REQUESTED:
-            raise _problem(409, "invalid-state", "the wallet account is not complete yet")
+            raise errors.invalid_state("the wallet account is not complete yet")
         if reference is not None and account is not None and account["id"] != reference:
-            raise _problem(409, "conflict", "walletAccountRef is not the current wallet account of the technical user")
+            raise errors.conflict("walletAccountRef is not the current wallet account of the technical user")
         if account is None:
             service.log_step(input, "delete-wallet-account", technical_user_id, "DONE")
             return {"stepRunId": input["stepRunId"], "state": "DONE",
@@ -293,7 +289,7 @@ def delete_wallet_account(input: dict) -> dict:
         if account["status"] == DELETED:
             return _reply(input, "delete-wallet-account", "DONE", account)
         if account["company_id"] != company_id:
-            raise _problem(409, "conflict", "the wallet account belongs to another company")
+            raise errors.conflict("the wallet account belongs to another company")
         if account["status"] == FAILED:
             account = _delete(account)
         elif providers.get(account["provider"]).deletion_is_async:
@@ -311,7 +307,7 @@ def delete_wallet_account(input: dict) -> dict:
 def _callback_account(reference: str) -> dict:
     account = service.get_store().get_account_by_ref(reference)
     if account is None:
-        raise _problem(404, "not-found", "no wallet account with this externalId")
+        raise errors.not_found("no wallet account with this externalId")
     return account
 
 
@@ -321,7 +317,7 @@ def accept_account_created(reference: str, body: dict, claims: dict | str | None
     details = body if isinstance(body, dict) else {}
     for name in ("authenticationServiceUrl", "clientID", "clientSecret"):
         if not isinstance(details.get(name), str) or not details[name]:
-            raise _problem(400, "validation", f"{name} is required")
+            raise errors.validation(f"{name} is required")
     found = _callback_account(reference)
     with _lock(found["technical_user_id"]):
         account = _callback_account(reference)
@@ -329,7 +325,7 @@ def accept_account_created(reference: str, body: dict, claims: dict | str | None
             _activate(account, details["authenticationServiceUrl"].rstrip("/") + "/oauth/token",
                       details["clientID"], details["clientSecret"])
         elif account["status"] != ACTIVE:
-            raise _problem(409, "invalid-state", "the wallet account is not waiting for this callback")
+            raise errors.invalid_state("the wallet account is not waiting for this callback")
         service.audit(claims, "SUBMIT_WALLET_ACCOUNT_CALLBACK", account["company_id"], account["id"])
 
 
@@ -341,7 +337,7 @@ def accept_account_deleted(reference: str, claims: dict | str | None) -> None:
         if account["status"] == DELETING:
             _delete(account)
         elif account["status"] != DELETED:
-            raise _problem(409, "invalid-state", "the wallet account is not being deleted")
+            raise errors.invalid_state("the wallet account is not being deleted")
         service.audit(claims, "SUBMIT_WALLET_ACCOUNT_CALLBACK", account["company_id"], account["id"])
 
 
@@ -353,23 +349,23 @@ def retrieve_credentials(technical_user_id: str, claims: dict) -> dict:
     with _lock(technical_user_id):
         account = _current(technical_user_id)
         if not claims.get("company_id") or claims["company_id"] != account["company_id"]:
-            raise _problem(404, "not-found", "no wallet account for this technical user")
+            raise errors.not_found("no wallet account for this technical user")
         if account["status"] != ACTIVE:
-            raise _problem(409, "invalid-state", "the wallet account is not ACTIVE")
+            raise errors.invalid_state("the wallet account is not ACTIVE")
         state = account["credentials_state"]
         if state == RETRIEVED:
-            raise _problem(410, "already-retrieved", "the credentials were retrieved already")
+            raise errors.already_retrieved("the credentials were retrieved already")
         if state == EXPIRED:
-            raise _problem(410, "credentials-expired", "the credentials were deleted after the retention period")
+            raise errors.credentials_expired("the credentials were deleted after the retention period")
         if state != AVAILABLE:
-            raise _problem(409, "no-credentials", "the wallet account has no credentials to retrieve")
+            raise errors.no_credentials("the wallet account has no credentials to retrieve")
         row = store.get_account_credentials(account["id"])
         if row is None:
-            raise _problem(410, "already-retrieved", "the credentials were retrieved already")
+            raise errors.already_retrieved("the credentials were retrieved already")
         # Decrypt before the row is removed: a failing key must not destroy credentials nobody has received.
         secret = crypto.decrypt(row["client_secret_encrypted"], row["nonce"], row["key_version"])
         if store.pop_account_credentials(account["id"]) is None:
-            raise _problem(410, "already-retrieved", "the credentials were retrieved already")
+            raise errors.already_retrieved("the credentials were retrieved already")
         account["credentials_state"] = RETRIEVED
         _save(account)
         service.audit(claims, "RETRIEVE_WALLET_CREDENTIALS", account["company_id"], account["id"])

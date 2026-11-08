@@ -37,7 +37,6 @@ from typing import Callable
 
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from portal_common.problems import Problem
 
 MODULE = "c4-m2"
 log = logging.getLogger(__name__)
@@ -66,15 +65,6 @@ def failures(subject: str) -> set[str]:
             found.add(failure.strip().upper())
     return found
 
-
-def upstream_error(detail: str) -> Problem:
-    """README 12: the provider did not accept an order or is not reachable."""
-    return Problem(MODULE, 502, "upstream-error", detail=detail, retryable=True)
-
-
-def provider_rejected(detail: str) -> Problem:
-    """README 12: the provider rejects on business grounds."""
-    return Problem(MODULE, 409, "provider-rejected", detail=detail, retryable=False)
 
 
 # ------------------------------------------------------------------------------------- order log
