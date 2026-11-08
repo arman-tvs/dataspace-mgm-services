@@ -41,7 +41,7 @@ import jwt
 from portal_common import http
 from portal_common.problems import Problem
 
-from . import catalog
+from . import catalog, errors
 
 MODULE = "c1-m2"
 TYP = "ebw-attestation+jwt"
@@ -93,10 +93,10 @@ def _fetch_keys() -> list[dict]:
     try:
         r = http.request("GET", url, timeout=5)
         if not r.is_success:
-            raise Problem(MODULE, 502, "upstream-error", detail=f"JWKS of the issuer answered {r.status_code}", retryable=True)
+            raise errors.upstream_error(f"JWKS of the issuer answered {r.status_code}", retryable=True)
         return r.json().get("keys", [])
     except (httpx.HTTPError, ValueError) as e:
-        raise Problem(MODULE, 502, "upstream-error", detail=f"JWKS of the issuer: {type(e).__name__}", retryable=True) from e
+        raise errors.upstream_error(f"JWKS of the issuer: {type(e).__name__}", retryable=True) from e
 
 
 def _key(kid: str | None) -> dict | None:
@@ -116,7 +116,7 @@ def _key(kid: str | None) -> dict | None:
 
 
 def _invalid(reason: str) -> Problem:
-    return Problem(MODULE, 400, "attestation-invalid", reason=reason)
+    return errors.attestation_invalid(reason)
 
 
 def _signed_payload(token: str, cfg: dict) -> tuple[dict, dict]:
@@ -127,7 +127,7 @@ def _signed_payload(token: str, cfg: dict) -> tuple[dict, dict]:
     except (jwt.PyJWTError, ValueError, TypeError) as e:
         raise _invalid("format") from e
     if not cfg["issuer"]:   # an address of another system: the installation must set it (FRAMEWORK 4.8)
-        raise Problem(MODULE, 502, "upstream-error", detail="ATTESTATION_ISSUER is not set", retryable=False)
+        raise errors.upstream_error("ATTESTATION_ISSUER is not set", retryable=False)
     alg = header.get("alg")
     if not isinstance(alg, str) or alg.lower() == "none" or alg not in cfg["algorithms"] or header.get("typ") != TYP:
         raise _invalid("algorithm")

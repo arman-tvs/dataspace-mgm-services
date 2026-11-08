@@ -35,7 +35,8 @@ import os
 from pathlib import Path
 
 from portal_common import neighbours
-from portal_common.problems import Problem
+
+from . import errors
 
 MODULE = "c1-m2"
 C3_M1, C1_M3 = "c3-m1", "c1-m3"
@@ -44,10 +45,10 @@ C3_M1, C1_M3 = "c3-m1", "c1-m3"
 def _stub(var: str, target: str) -> list[dict]:
     path = os.environ.get(var, "")
     if not path:
-        raise Problem(MODULE, 502, "upstream-error", detail=f"{target} stand-in: {var} not set", retryable=True)
+        raise errors.upstream_error(f"{target} stand-in: {var} not set", retryable=True)
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, list):
-        raise Problem(MODULE, 502, "upstream-error", detail=f"{target} not reachable", retryable=True)
+        raise errors.upstream_error(f"{target} not reachable", retryable=True)
     return data
 
 
