@@ -62,13 +62,14 @@ def upload_document(application_id: str, sub: str, document_type: str, file_name
             invalid.append(err("file", "too many supporting documents"))
         if invalid:
             raise errors.validation(invalid)
-        info = {"documentId": str(uuid.uuid4()), "documentType": document_type, "fileName": file_name,
+        document_id = str(uuid.uuid4())
+        info = {"documentId": document_id, "documentType": document_type, "fileName": file_name,
                 "contentType": content_type, "sizeBytes": len(content), "sha256": hashlib.sha256(content).hexdigest(),
                 "uploadedAt": now_iso()}
         a["documents"].append(info)
-        a["_files"][info["documentId"]] = content
+        a["_files"][document_id] = content
         a["changedAt"] = now_iso()
-        audit(a, "uploadDocument", sub=sub, object_id=info["documentId"])
+        audit(a, "uploadDocument", sub=sub, object_id=document_id)
         return info
 
 

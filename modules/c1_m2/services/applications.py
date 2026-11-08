@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Sequence
 
 from modules.c1_m2 import attestation, catalog, errors, gateways, store
 from modules.c1_m2.errors import MODULE, FieldError
@@ -135,15 +136,15 @@ def _new_application(body: dict, claims: dict, company: dict | None, company_cla
 
 
 
-def list_own(sub: str, status: list[str] | None, page: int, size: int) -> dict:
+def list_own(sub: str, status: Sequence[str] | None, page: int, size: int) -> dict:
     found = sorted((a for a in store.applications.values()
                     if a["applicant"]["sub"] == sub and (not status or a["status"] in status)),
                    key=lambda a: a["_seq"], reverse=True)
     return paged([summary(a) for a in found], page, size)
 
 
-def list_all(status: list[str] | None, kind: list[str] | None, verification: list[str] | None, company_id: str | None,
-             page: int, size: int) -> dict:
+def list_all(status: Sequence[str] | None, kind: Sequence[str] | None, verification: Sequence[str] | None,
+             company_id: str | None, page: int, size: int) -> dict:
     found = sorted((a for a in store.applications.values()
                     if (not status or a["status"] in status) and (not kind or a["kind"] in kind)
                     and (not verification or a["verification"] in verification)

@@ -37,6 +37,7 @@ from pathlib import Path
 
 import httpx
 import jwt
+import jwt.types
 
 from portal_common import http
 from portal_common.problems import Problem
@@ -46,8 +47,9 @@ from . import catalog, errors
 MODULE = "c1-m2"
 TYP = "ebw-attestation+jwt"
 DURATION = re.compile(r"^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$")
-_VERIFY_SIGNATURE_ONLY = {"verify_signature": True, "verify_exp": False, "verify_nbf": False, "verify_iat": False,
-                          "verify_aud": False, "verify_iss": False, "verify_sub": False, "verify_jti": False}
+_VERIFY_SIGNATURE_ONLY: jwt.types.Options = {
+    "verify_signature": True, "verify_exp": False, "verify_nbf": False, "verify_iat": False,
+    "verify_aud": False, "verify_iss": False, "verify_sub": False, "verify_jti": False}
 
 _jwks_lock = threading.Lock()
 _jwks: tuple[list[dict], float] | None = None

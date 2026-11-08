@@ -29,7 +29,7 @@ from __future__ import annotations
 from typing import TypeGuard
 
 from modules.c1_m2 import attestation, catalog, errors, gateways, store
-from modules.c1_m2.errors import MODULE
+from modules.c1_m2.errors import MODULE, AgreementRef
 from modules.c1_m2.services.checks import check_reference_data
 from modules.c1_m2.services.common import ATTESTATION_MAX_CHARS, audit, err, now_iso, own, public
 from modules.c1_m2.services.company_data import check_existing_identifiers, company_data_ebw, given_identifiers
@@ -110,7 +110,7 @@ def submit_application(application_id: str, sub: str, body: dict) -> dict:
             undeclared = body.get("representationDeclared") is not True
             if missing_types or undeclared:
                 raise errors.documents_incomplete(missing_types, undeclared)
-        required = [{"agreementKey": x["agreementKey"], "version": x["version"]}
+        required: list[AgreementRef] = [{"agreementKey": x["agreementKey"], "version": x["version"]}
                     for x in catalog.required(a["companyRoles"])]
         given = {(c["agreementKey"], c["version"]) for c in consents}
         missing = [r for r in required if (r["agreementKey"], r["version"]) not in given]

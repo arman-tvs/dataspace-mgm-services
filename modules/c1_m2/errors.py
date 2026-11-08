@@ -65,7 +65,8 @@ def _retryable(retryable: bool | None) -> dict[str, Extra]:
 
 def validation(errors: list[FieldError], *, retryable: bool | None = None) -> Problem:
     """400 `validation`: input invalid; details in `errors`. `retryable` only for a step."""
-    return _problem(400, "validation", extra={"errors": errors} | _retryable(retryable))
+    extra: dict[str, Extra] = {"errors": errors}
+    return _problem(400, "validation", extra=extra | _retryable(retryable))
 
 
 def attestation_invalid(reason: str) -> Problem:

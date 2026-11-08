@@ -101,7 +101,10 @@ def company_data_documents(given: dict) -> tuple[dict, list[dict]]:
 
 
 def build_company_data(verification: str, company: dict | None, given: dict) -> tuple[dict, list[dict]]:
-    return company_data_ebw(company, given) if verification == "EBW" else company_data_documents(given)
+    if verification != "EBW":
+        return company_data_documents(given)
+    assert company is not None   # EBW: the `company` claim of the verification attestation (6.5)
+    return company_data_ebw(company, given)
 
 
 def check_existing_identifiers(company: dict, ebwoid: str | None, euid: str | None) -> None:
@@ -140,4 +143,5 @@ def new_company_id(ebwoid: str | None) -> str:
 
 def role_name(role: object) -> str:
     """Company roles of C3-M1 come as names or as `{companyRole, status}`."""
-    return role.get("companyRole") if isinstance(role, dict) else role
+    name = role.get("companyRole") if isinstance(role, dict) else role
+    return name if isinstance(name, str) else ""   # not a name: never selectable

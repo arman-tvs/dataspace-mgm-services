@@ -30,7 +30,7 @@ from modules.c1_m2 import attestation, catalog, errors, store
 from modules.c1_m2.services.common import public, summary
 
 
-def get_application_internal(*, applicationId: str, **_other) -> dict:
+def get_application_internal(*, applicationId: str, **_other: object) -> dict:
     a = store.applications.get(applicationId)
     if not a:
         raise errors.not_found()
@@ -40,12 +40,12 @@ def get_application_internal(*, applicationId: str, **_other) -> dict:
     return public(a) | {"attestation": detail, "requiredAgreements": a["_requiredAgreements"]}
 
 
-def list_applications_internal(*, applicationId: list[str] | str | None = None, **_other) -> list[dict]:
+def list_applications_internal(*, applicationId: list[str] | str | None = None, **_other: object) -> list[dict]:
     """`ApplicationSummary` in the order of the request; unknown IDs are left out."""
     ids = [applicationId] if isinstance(applicationId, str) else applicationId or []
     return [summary(a) for i in ids if (a := store.applications.get(i))]
 
 
-def list_agreements_internal(*, status: str | None = None, **_other) -> list[dict]:
+def list_agreements_internal(*, status: str | None = None, **_other: object) -> list[dict]:
     wanted = status or "ACTIVE"
     return [a for a in catalog.versions() if a["status"] == wanted]

@@ -33,7 +33,8 @@ from portal_common import events
 
 
 def step_application(input: dict) -> dict:
-    a = store.applications.get(input.get("applicationId"))
+    application_id = input.get("applicationId")
+    a = store.applications.get(application_id) if isinstance(application_id, str) else None
     if not a:
         raise errors.not_found(retryable=False)
     return a

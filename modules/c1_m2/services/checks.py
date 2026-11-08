@@ -90,6 +90,8 @@ def check_roles(company_roles: object, invalid: list[FieldError]) -> None:
 
 
 def is_uuid(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
     try:
         uuid.UUID(value)
     except (ValueError, TypeError, AttributeError):
