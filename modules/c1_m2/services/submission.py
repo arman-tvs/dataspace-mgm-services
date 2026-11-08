@@ -26,6 +26,8 @@
 """A new verification attestation (README 7.6) and the submission of an application (7.10)."""
 from __future__ import annotations
 
+from typing import TypeGuard
+
 from modules.c1_m2 import attestation, catalog, errors, gateways, store
 from modules.c1_m2.errors import MODULE
 from modules.c1_m2.services.checks import check_reference_data
@@ -46,16 +48,9 @@ def replace_attestation(application_id: str, claims: dict, token: object) -> dic
     if a["_attestation"]["attestationId"] == payload["jti"]:
         return public(a)
     new, old = payload["company"], a["_attestationClaims"]["company"]
-    fields = []
-    if new["ebwoid"] != old["ebwoid"]:
-        fields.append("EBWOID")
-    if new["country"] != old["country"]:
-        fields.append("COUNTRY")
     applicant_euid = given_identifiers(a["_given"]).get("EUID")
     euid = catalog.normalise_identifier("EUID", new["euid"]) if new.get("euid") else None
-    if euid and ((old.get("euid") and catalog.normalise_identifier("EUID", old["euid"]) != euid)
-                 or (applicant_euid and applicant_euid != euid)):
-        fields.append("EUID")
+    fields = _mismatched_fields(new, old, euid, applicant_euid)
     if fields:
         raise errors.attestation_mismatch(fields)
     data, comparison = company_data_ebw(new, a["_given"])
@@ -74,6 +69,26 @@ def replace_attestation(application_id: str, claims: dict, token: object) -> dic
         return public(a)
 
 
+def _mismatched_fields(new: dict, old: dict, euid: str | None, applicant_euid: str | None) -> list[str]:
+    """7.6: the new verification attestation must concern the same company (EBWOID, country, EUID)."""
+    fields = []
+    if new["ebwoid"] != old["ebwoid"]:
+        fields.append("EBWOID")
+    if new["country"] != old["country"]:
+        fields.append("COUNTRY")
+    if euid and ((old.get("euid") and catalog.normalise_identifier("EUID", old["euid"]) != euid)
+                 or (applicant_euid and applicant_euid != euid)):
+        fields.append("EUID")
+    return fields
+
+
+def _valid_consents(consents: object) -> TypeGuard[list[dict]]:
+    """7.10: at least one consent, each with `agreementKey`, `version` and `language` de or en."""
+    return isinstance(consents, list) and bool(consents) and all(
+        isinstance(c, dict) and isinstance(c.get("agreementKey"), str) and isinstance(c.get("version"), str)
+        and c.get("language") in ("de", "en") for c in consents)
+
+
 def submit_application(application_id: str, sub: str, body: dict) -> dict:
     """7.10."""
     with store.lock:
@@ -83,11 +98,9 @@ def submit_application(application_id: str, sub: str, body: dict) -> dict:
         if a["status"] != "CREATED":
             raise errors.invalid_state(f"application is {a['status']}")
         consents = body.get("consents")
-        valid = isinstance(consents, list) and consents and all(
-            isinstance(c, dict) and isinstance(c.get("agreementKey"), str) and isinstance(c.get("version"), str)
-            and c.get("language") in ("de", "en") for c in consents)
-        if not valid:
-            raise errors.validation([err("consents", "at least one consent with agreementKey, version and language de or en")])
+        if not _valid_consents(consents):
+            raise errors.validation([err("consents",
+                                         "at least one consent with agreementKey, version and language de or en")])
         if a["verification"] == "EBW" and not attestation.usable_at_submission(a):
             raise errors.attestation_expired()
         if a["verification"] == "DOCUMENTS":

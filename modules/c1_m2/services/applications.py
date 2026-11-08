@@ -58,26 +58,15 @@ def create_application(body: dict, claims: dict) -> tuple[dict, bool]:
         raise errors.documents_disabled()
     header, payload = attestation.verify(body["attestation"], claims) if verification == "EBW" else (None, None)
     sub = claims["sub"]
-    with store.lock:
-        existing = open_of(sub)
-        if existing:
-            if payload and existing.get("_attestation") and existing["_attestation"]["attestationId"] == payload["jti"]:
-                return public(existing), False
-            raise errors.open_application_exists(existing["id"])
-        if payload and payload["jti"] in store.used_jtis:
-            raise errors.attestation_used()
+    repeated = _repetition(sub, payload)
+    if repeated is not None:
+        return public(repeated), False
     given = body.get("companyData") or {}
     company = company_for_reference(body, kind) if (body.get("companyId") or body.get("bpn")) else None
     company_claim = (payload or {}).get("company")
-    company_roles = body.get("companyRoles")
+    company_roles: list[str] = body.get("companyRoles") or []
     if company:
-        euid = (company_claim or {}).get("euid") or given_identifiers(given).get("EUID")
-        check_existing_identifiers(company, (company_claim or {}).get("ebwoid"), euid)
-        if not company_roles:
-            company_roles = [r for r in company.get("companyRoles") or [] if catalog.selectable(role_name(r))]
-            company_roles = [role_name(r) for r in company_roles]
-            if not company_roles:
-                raise errors.validation([err("companyRoles", "the company has no selectable roles: give the roles")])
+        company_roles = _roles_for_company(company, company_claim, given, company_roles)
     data, comparison = build_company_data(verification, company_claim, given)
     check_reference_data(data, company_roles, verification)
     with store.lock:
@@ -88,25 +77,61 @@ def create_application(body: dict, claims: dict) -> tuple[dict, bool]:
             raise errors.attestation_used()
         if company and any(a["companyId"] == company["id"] and a["status"] in OPEN for a in store.applications.values()):
             raise errors.company_has_open_application()
-        now = now_iso()
-        a = {"id": str(uuid.uuid4()),
-             "companyId": company["id"] if company else new_company_id((company_claim or {}).get("ebwoid")),
-             "kind": kind, "existingCompany": bool(company), "verification": verification,
-             "applicant": {"sub": sub, "givenName": claims.get("given_name"), "familyName": claims.get("family_name")},
-             "status": "CREATED", "companyData": data, "companyRoles": list(company_roles), "comparison": comparison,
-             "documents": [], "representationDeclared": None, "consents": [], "declineReason": None, "createdAt": now,
-             "changedAt": now, "submittedAt": None, "withdrawnAt": None, "closedAt": None, "completedAt": None,
-             "_seq": next(store.seq), "_given": given, "_files": {}, "_requiredAgreements": [], "_consentRecords": [],
-             "_companyRef": bool(company)}
+        a = _new_application(body, claims, company, company_claim, given, (data, comparison), company_roles)
         if payload:
+            assert header is not None   # verify() returns both or neither
             a |= {"_attestation": attestation.summary(header, payload), "_raw": body["attestation"],
                   "_attestationClaims": {"iat": payload["iat"], "exp": payload["exp"], "company": company_claim}}
             store.used_jtis.add(payload["jti"])
         store.applications[a["id"]] = a
         audit(a, "createApplication", sub=sub)
-        events.publish(MODULE, "ApplicationCreated", {"applicationId": a["id"], "companyId": a["companyId"], "kind": kind,
-                                                      "existingCompany": a["existingCompany"]})
+        events.publish(MODULE, "ApplicationCreated", {"applicationId": a["id"], "companyId": a["companyId"],
+                                                      "kind": kind, "existingCompany": a["existingCompany"]})
         return public(a), True
+
+
+def _repetition(sub: str, payload: dict | None) -> dict | None:
+    """7.2: the open application of the person if this is a repetition with the same attestation; another open
+    application or an attestation already used is an error."""
+    with store.lock:
+        existing = open_of(sub)
+        if existing:
+            if payload and existing.get("_attestation") and existing["_attestation"]["attestationId"] == payload["jti"]:
+                return existing
+            raise errors.open_application_exists(existing["id"])
+        if payload and payload["jti"] in store.used_jtis:
+            raise errors.attestation_used()
+    return None
+
+
+def _roles_for_company(company: dict, company_claim: dict | None, given: dict, company_roles: list[str]) -> list[str]:
+    """6.2: the identifiers must fit the existing company; without roles in the request its selectable roles apply."""
+    euid = (company_claim or {}).get("euid") or given_identifiers(given).get("EUID")
+    check_existing_identifiers(company, (company_claim or {}).get("ebwoid"), euid)
+    if company_roles:
+        return company_roles
+    roles = [role_name(r) for r in company.get("companyRoles") or [] if catalog.selectable(role_name(r))]
+    if not roles:
+        raise errors.validation([err("companyRoles", "the company has no selectable roles: give the roles")])
+    return roles
+
+
+def _new_application(body: dict, claims: dict, company: dict | None, company_claim: dict | None, given: dict,
+                     company_data: tuple[dict, list[dict]], company_roles: list[str]) -> dict:
+    """The row of a new application in status `CREATED` (README 5)."""
+    data, comparison = company_data
+    now = now_iso()
+    return {"id": str(uuid.uuid4()),
+            "companyId": company["id"] if company else new_company_id((company_claim or {}).get("ebwoid")),
+            "kind": body["kind"], "existingCompany": bool(company), "verification": body["verification"],
+            "applicant": {"sub": claims["sub"], "givenName": claims.get("given_name"),
+                          "familyName": claims.get("family_name")},
+            "status": "CREATED", "companyData": data, "companyRoles": list(company_roles), "comparison": comparison,
+            "documents": [], "representationDeclared": None, "consents": [], "declineReason": None, "createdAt": now,
+            "changedAt": now, "submittedAt": None, "withdrawnAt": None, "closedAt": None, "completedAt": None,
+            "_seq": next(store.seq), "_given": given, "_files": {}, "_requiredAgreements": [],
+            "_consentRecords": [], "_companyRef": bool(company)}
+
 
 
 def list_own(sub: str, status: list[str] | None, page: int, size: int) -> dict:

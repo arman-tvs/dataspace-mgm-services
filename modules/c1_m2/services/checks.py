@@ -98,8 +98,17 @@ def is_uuid(value: object) -> bool:
 
 
 def check_create(body: dict) -> None:
-    """7.2 step 2 with the rules of 6.2."""
+    """7.2 step 2 with the rules of 6.2; the field errors in the order of the checks."""
     invalid: list[FieldError] = []
+    _check_kind_and_path(body, invalid)
+    _check_company_reference(body, invalid)
+    _check_create_data(body, invalid)
+    if invalid:
+        raise errors.validation(invalid)
+
+
+def _check_kind_and_path(body: dict, invalid: list[FieldError]) -> None:
+    """`kind`, `verification` and the `attestation` the verification path needs."""
     kind, verification = body.get("kind"), body.get("verification")
     if kind not in KINDS:
         invalid.append(err("kind", f"one of {', '.join(KINDS)}"))
@@ -110,6 +119,11 @@ def check_create(body: dict) -> None:
         invalid.append(err("attestation", "required for EBW, at most 16 KB"))
     if verification == "DOCUMENTS" and token is not None:
         invalid.append(err("attestation", "not allowed for DOCUMENTS"))
+
+
+def _check_company_reference(body: dict, invalid: list[FieldError]) -> None:
+    """`companyId` or `bpn` of an existing company (6.2) and the `companyRoles` that go with it."""
+    kind = body.get("kind")
     reference = body.get("companyId") or body.get("bpn")
     if body.get("companyId") and body.get("bpn"):
         invalid.append(err("companyId", "companyId and bpn must not both be given"))
@@ -123,20 +137,22 @@ def check_create(body: dict) -> None:
         invalid.append(err("companyId", "reference required for REACTIVATION"))
     if body.get("companyRoles") is not None or not reference:
         check_roles(body.get("companyRoles"), invalid)
+
+
+def _check_create_data(body: dict, invalid: list[FieldError]) -> None:
+    """`companyData`; for the verification path `DOCUMENTS` name, address and an identifier are required."""
     data = body.get("companyData")
     if data is not None and not isinstance(data, dict):
         invalid.append(err("companyData", "must be an object"))
     elif data:
         check_company_fields(data, invalid)
-    if verification == "DOCUMENTS":
+    if body.get("verification") == "DOCUMENTS":
         data = data if isinstance(data, dict) else {}
         for name in ("legalName", "address"):
             if not data.get(name):
                 invalid.append(err(f"companyData.{name}", "required for DOCUMENTS"))
         if not data.get("identifiers"):
             invalid.append(err("companyData.identifiers", "at least one identifier for DOCUMENTS"))
-    if invalid:
-        raise errors.validation(invalid)
 
 
 def check_reference_data(a_data: dict, company_roles: list[str], verification: str) -> None:
@@ -158,30 +174,50 @@ def check_reference_data(a_data: dict, company_roles: list[str], verification: s
         raise errors.validation(invalid)
 
 
-def check_agreement(body: dict) -> list[dict]:
+def check_agreement(body: dict) -> list[FieldError]:
+    """7.16: a new version of terms; the field errors in the order of the checks."""
     invalid: list[FieldError] = []
+    _check_agreement_identity(body, invalid)
+    _check_agreement_scope(body, invalid)
+    _check_agreement_texts(body, invalid)
+    _check_reconsent(body, invalid)
+    return invalid
+
+
+def _check_agreement_identity(body: dict, invalid: list[FieldError]) -> None:
     if not (isinstance(body.get("agreementKey"), str) and re.fullmatch(r"[a-z0-9-]{1,64}", body["agreementKey"])):
         invalid.append(err("agreementKey", "lower case letters, digits and hyphens, at most 64"))
     if not (isinstance(body.get("version"), str) and 1 <= len(body["version"]) <= 20):
         invalid.append(err("version", "1 to 20 characters"))
     if body.get("party") not in ("OSP", "DATASPACE"):
         invalid.append(err("party", "OSP or DATASPACE"))
+
+
+def _check_agreement_scope(body: dict, invalid: list[FieldError]) -> None:
     scope, company_roles = body.get("scope"), body.get("companyRoles")
     if scope not in ("ALL", "COMPANY_ROLE"):
         invalid.append(err("scope", "ALL or COMPANY_ROLE"))
     if scope == "COMPANY_ROLE":
         check_roles(company_roles, invalid)
         if isinstance(company_roles, list):
-            invalid += [err("companyRoles", f"not selectable: {r}") for r in company_roles if not catalog.selectable(r)]
+            invalid += [err("companyRoles", f"not selectable: {r}")
+                        for r in company_roles if not catalog.selectable(r)]
     elif company_roles:
         invalid.append(err("companyRoles", "only for scope COMPANY_ROLE"))
+
+
+def _check_agreement_texts(body: dict, invalid: list[FieldError]) -> None:
     title = body.get("title")
-    if not (isinstance(title, dict) and all(isinstance(title.get(k), str) and 1 <= len(title[k]) <= 200 for k in ("de", "en"))):
+    if not (isinstance(title, dict)
+            and all(isinstance(title.get(k), str) and 1 <= len(title[k]) <= 200 for k in ("de", "en"))):
         invalid.append(err("title", "de and en, 1 to 200 characters"))
     urls = body.get("documentUrls")
     if not (isinstance(urls, dict) and urls and set(urls) <= {"de", "en"}
             and all(isinstance(u, str) and u.startswith("https://") for u in urls.values())):
         invalid.append(err("documentUrls", "de or en, at least one, HTTPS"))
+
+
+def _check_reconsent(body: dict, invalid: list[FieldError]) -> None:
     if not isinstance(body.get("reconsentRequired"), bool):
         invalid.append(err("reconsentRequired", "required"))
     if body.get("reconsentRequired"):
@@ -191,4 +227,3 @@ def check_agreement(body: dict) -> list[dict]:
                 invalid.append(err("reconsentDueAt", "must be in the future"))
         except ValueError:
             invalid.append(err("reconsentDueAt", "required with reconsentRequired, date-time"))
-    return invalid
