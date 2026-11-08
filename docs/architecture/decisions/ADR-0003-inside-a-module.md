@@ -42,6 +42,9 @@ modules/<id>/
 | errors | any other layer |
 
 Service, store, gateways and errors do not import `fastapi`, `pydantic` or `starlette`: HTTP stays at the edge.
+In `interface.py`, every step and query is a one-line `def` that calls the service (`def register_company(input:
+dict) -> dict: return registration.register_company(input)`), not a re-export (`from .service import ...`):
+`module-map` counts only functions defined with `def`, and the signatures of the call convention stay visible.
 Inside a subpackage (`services/`, `adapters/`), import the module's own files absolutely
 (`from modules.<id> import errors, store`), not with `from .. import`: `tests/test_interfaces.py` reads a two-dot
 import as a foreign module. One dot within the same subpackage (`from .common import ...`) is fine.
