@@ -47,7 +47,6 @@ log = logging.getLogger(__name__)
 MODULE = "c4-m2"
 PROVIDERS = ("SAP_DIV", "IDENTITY_HUB", "CSP")
 HOLDER_ACCESS, STS_ACCESS = "HOLDER_ACCESS", "STS_ACCESS"
-DEFAULT_CALLBACK_CLIENT = "sa-div-callback"
 
 _store: WalletStore | None = None
 _store_lock = threading.Lock()
@@ -119,7 +118,7 @@ def _when(value: Any) -> dt.datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
 
 
-def _iso(value: Any) -> str | None:
+def iso(value: Any) -> str | None:
     moment = _when(value)
     return moment.isoformat() if moment else None
 
@@ -154,13 +153,13 @@ def wallet_secret(wallet_id: str, kind: str) -> dict | None:
             "secret": crypto.decrypt(row["secret_encrypted"], row["nonce"], row["key_version"])}
 
 
-def _store_secret(wallet_id: str, kind: str, access: dict) -> None:
+def store_secret(wallet_id: str, kind: str, access: dict) -> None:
     """Encrypt and store `{url, client_id, secret}` (README 5 `wallet_secret`)."""
     ciphertext, nonce, key_version = crypto.encrypt(access["secret"])
     get_store().put_secret(wallet_id, kind, access["url"], access["client_id"], ciphertext, nonce, key_version)
 
 
-def _save(wallet: dict) -> dict:
+def save_wallet(wallet: dict) -> dict:
     wallet["changed_at"] = now()
     get_store().put_wallet(wallet)
     return wallet
@@ -196,10 +195,10 @@ def _wallet_created(wallet: dict) -> None:
         "bpn": wallet["bpn"]})
 
 
-def _fail(wallet: dict, reason: str) -> dict:
+def fail_wallet(wallet: dict, reason: str) -> dict:
     """Status `FAILED` with the reason and the event `DataspaceWalletFailed` (README 6.2, 10)."""
     wallet.update(status="FAILED", failure_reason=reason, next_check_at=None)
-    _save(wallet)
+    save_wallet(wallet)
     events.publish(MODULE, "DataspaceWalletFailed", {
         "companyId": wallet["company_id"], "walletId": wallet["id"], "provider": wallet["provider"],
         "reason": reason})
@@ -211,7 +210,7 @@ def _activate(wallet: dict, document: dict) -> dict:
     moment = now()
     wallet.update(status="ACTIVE", did_validated_at=moment, activated_at=moment, next_check_at=None,
                   credential_service_url=credential_service_url(document) or wallet.get("credential_service_url"))
-    _save(wallet)
+    save_wallet(wallet)
     _wallet_created(wallet)
     return wallet
 
@@ -223,17 +222,17 @@ def check_did(wallet: dict) -> dict:
     `DID_VALIDATION_INTERVAL_MINUTES`, after `DID_VALIDATION_MAX_HOURS` from `validating_since` `FAILED`
     `DID_NOT_RESOLVABLE`. Invalid content: `FAILED` `INVALID_DID_DOCUMENT`. Otherwise `ACTIVE`."""
     if not did.check_form(wallet["provider"], wallet["did"], wallet["bpn"]):
-        return _fail(wallet, "DID_MISMATCH")
+        return fail_wallet(wallet, "DID_MISMATCH")
     document = did.resolve(wallet["did"])
     moment = now()
     if document is None:
         started = _when(wallet.get("validating_since")) or moment
         if moment >= started + dt.timedelta(hours=_number("DID_VALIDATION_MAX_HOURS", 168)):
-            return _fail(wallet, "DID_NOT_RESOLVABLE")
+            return fail_wallet(wallet, "DID_NOT_RESOLVABLE")
         wallet["next_check_at"] = moment + dt.timedelta(minutes=_number("DID_VALIDATION_INTERVAL_MINUTES", 10))
-        return _save(wallet)
+        return save_wallet(wallet)
     if did.check_document(wallet["provider"], wallet["did"], document):
-        return _fail(wallet, did.INVALID_DID_DOCUMENT)
+        return fail_wallet(wallet, did.INVALID_DID_DOCUMENT)
     return _activate(wallet, document)
 
 
@@ -284,7 +283,7 @@ def _reset_for_new_attempt(wallet: dict, provider: str) -> dict:
                   did_document_location=None, credential_service_url=None, provider_ref=None,
                   provider_ordered_at=None, validating_since=None, did_validated_at=None, next_check_at=None,
                   activated_at=None, attempt=int(wallet.get("attempt") or 1) + 1)
-    return _save(wallet)
+    return save_wallet(wallet)
 
 
 def _order(wallet: dict, company: dict) -> dict:
@@ -297,16 +296,16 @@ def _order(wallet: dict, company: dict) -> dict:
     moment = now()
     if answer.get("result") == "CREATED":
         for kind, access in (answer.get("secrets") or {}).items():
-            _store_secret(wallet["id"], kind, access)
+            store_secret(wallet["id"], kind, access)
         wallet.update(status="VALIDATING", did=answer["did"], did_document_location=answer.get("did_document_location"),
                       credential_service_url=answer.get("credential_service_url"),
                       provider_ref=answer.get("provider_ref"), provider_ordered_at=moment,
                       validating_since=moment, next_check_at=moment)
-        _save(wallet)
+        save_wallet(wallet)
         return check_did(wallet)           # README 8.1 step 5: try the DID check at once
     wallet["provider_ordered_at"] = wallet.get("provider_ordered_at") or moment
     wallet["provider_ref"] = wallet.get("provider_ref") or wallet["bpn"]
-    return _save(wallet)
+    return save_wallet(wallet)
 
 
 def _step_result(wallet: dict) -> dict:
@@ -339,7 +338,7 @@ def create_wallet(input: dict) -> dict:
             raise errors.conflict("the BPN does not match the existing wallets")
         state = "RUNNING"
         if wallet is None:
-            wallet = _save(_new_wallet(company_id, bpn, _choose_provider(requested)))
+            wallet = save_wallet(_new_wallet(company_id, bpn, _choose_provider(requested)))
             wallet = _order(wallet, company)
         elif wallet["status"] == "ACTIVE":
             state = "DONE"
@@ -353,92 +352,9 @@ def create_wallet(input: dict) -> dict:
         return {"stepRunId": input["stepRunId"], "state": state, "result": _step_result(wallet)}
 
 
-# --------------------------------------------------------------------------- SAP DIV callbacks
-def _callback_body_problem(body: Any) -> str | None:
-    """Why a callback body is malformed (openapi `SapDivWalletCallback`), None if it is complete."""
-    if not isinstance(body, dict) or not isinstance(body.get("did"), str) or not body["did"]:
-        return "did is required"
-    if not isinstance(body.get("didDocument"), dict):
-        return "didDocument is required"
-    details = body.get("authenticationDetails")
-    if not isinstance(details, dict):
-        return "authenticationDetails is required"
-    for name in ("authenticationServiceUrl", "clientID", "clientSecret"):
-        if not isinstance(details.get(name), str) or not details[name]:
-            return f"authenticationDetails.{name} is required"
-    return None
-
-
-def _callback_document_valid(document: dict) -> bool:
-    """README 7.6 step 4: schema of Portal 2.6.0, `@context` list, `id`, `service` list with `id` and `type`,
-    `verificationMethod` list with `id`, `type` and `publicKeyJwk` with `kty`, `crv`, `x`, `y`."""
-    def text(value: Any) -> bool:
-        return isinstance(value, str) and value != ""
-    if not isinstance(document.get("@context"), list) or not text(document.get("id")):
-        return False
-    services, methods = document.get("service"), document.get("verificationMethod")
-    if not isinstance(services, list) or not isinstance(methods, list):
-        return False
-    if not all(isinstance(e, dict) and text(e.get("id")) and e.get("type") for e in services):
-        return False
-    for method in methods:
-        jwk = method.get("publicKeyJwk") if isinstance(method, dict) else None
-        if not (text(method.get("id")) if isinstance(method, dict) else False) or not method.get("type") \
-                or not isinstance(jwk, dict) or not all(text(jwk.get(k)) for k in ("kty", "crv", "x", "y")):
-            return False
-    return True
-
-
-def _sap_div_location(bpn: str, did_value: str) -> str | None:
-    base = os.environ.get("SAP_DIV_DID_DOCUMENT_BASE_URL", "").strip().rstrip("/")
-    return f"{base}/{bpn}/did.json" if base else did_web_location(did_value)
-
-
-def authorize_sap_div_callback(claims: dict) -> None:
-    """README 7.6: only the callback client of SAP DIV (`SAP_DIV_CALLBACK_CLIENT_ID`) may call back (403,
-    nothing is audited). Token and permission are checked by the router before."""
-    client = os.environ.get("SAP_DIV_CALLBACK_CLIENT_ID", "").strip() or DEFAULT_CALLBACK_CLIENT
-    if claims.get("azp") != client:
-        raise errors.forbidden("the calling client is not the callback client of SAP DIV")
-
-
-def accept_wallet_callback(bpn: str, body: dict, claims: dict | str | None) -> None:
-    """The wallet callback of SAP DIV (README 7.6 steps 1 to 6). Returns None (the route answers 204);
-    raises `Problem` for 400, 404 and 409. Every accepted callback, also a duplicate, is audited."""
-    problem = _callback_body_problem(body)
-    if problem:
-        raise errors.validation(problem)
-    store = get_store()
-    found = store.find_wallet_by_bpn(bpn)
-    if found is None or found["provider"] != "SAP_DIV":
-        raise errors.not_found("no SAP DIV wallet for this BPN")
-    with store.transaction(found["company_id"]):
-        wallet = store.get_wallet(found["company_id"])
-        if wallet is None or wallet["provider"] != "SAP_DIV":
-            raise errors.not_found("no SAP DIV wallet for this BPN")
-        announced = body["did"]
-        if wallet["status"] in ("VALIDATING", "ACTIVE"):
-            if (wallet.get("did") or "").lower() != announced.lower():
-                raise errors.conflict("the wallet already has another DID")
-        elif wallet["status"] != "REQUESTED":
-            raise errors.invalid_state("the wallet is not waiting for a callback; a new attempt is needed")
-        elif not did.check_form("SAP_DIV", announced, wallet["bpn"]):
-            _fail(wallet, "DID_MISMATCH")
-        elif not _callback_document_valid(body["didDocument"]):
-            _fail(wallet, did.INVALID_DID_DOCUMENT)
-        else:
-            details = body["authenticationDetails"]
-            _store_secret(wallet["id"], HOLDER_ACCESS, {"url": details["authenticationServiceUrl"],
-                                                        "client_id": details["clientID"],
-                                                        "secret": details["clientSecret"]})
-            moment = now()
-            wallet.update(status="VALIDATING", did=announced,
-                          did_document_location=_sap_div_location(wallet["bpn"], announced),
-                          credential_service_url=credential_service_url(body["didDocument"]),
-                          validating_since=moment, next_check_at=moment)
-            _save(wallet)
-            check_did(wallet)              # README 7.6 step 6: the check starts right after the commit
-        audit(claims, "SUBMIT_WALLET_CALLBACK", wallet["company_id"], wallet["id"])
+def _wallet_callback(bpn: str, body: dict, caller: str) -> None:
+    from modules.c4_m2.services import sap_div_callback  # it imports this file: imported at call time
+    sap_div_callback.accept_wallet_callback(bpn, body, caller)
 
 
 def _account_created(reference: str, body: dict, caller: str) -> None:
@@ -451,7 +367,7 @@ def _account_deleted(reference: str, caller: str) -> None:
     accounts.accept_account_deleted(reference, caller)
 
 
-providers.register_callbacks(Callbacks(wallet=accept_wallet_callback, account_created=_account_created,
+providers.register_callbacks(Callbacks(wallet=_wallet_callback, account_created=_account_created,
                                                  account_deleted=_account_deleted))
 
 
@@ -467,7 +383,7 @@ def _timer_pass_requested(moment: dt.datetime) -> None:
         with store.transaction(candidate["company_id"]):
             wallet = store.get_wallet(candidate["company_id"])
             if wallet and wallet["status"] == "REQUESTED" and _when(wallet.get("provider_ordered_at")) == ordered:
-                _fail(wallet, "PROVIDER_TIMEOUT")
+                fail_wallet(wallet, "PROVIDER_TIMEOUT")
 
 
 def _timer_pass_validating(moment: dt.datetime) -> None:
@@ -520,60 +436,3 @@ def stop_timer() -> None:
     global _timer
     _timer_stop.set()
     _timer = None
-
-
-# -------------------------------------------------------------------------------------- queries
-def _issuance_mode(provider: str) -> str:
-    return "ISSUER_WRITES" if provider == "SAP_DIV" else "HOLDER_REQUESTS"
-
-
-def _wallet_or_404(company_id: str) -> dict:
-    wallet = get_store().get_wallet(company_id)
-    if wallet is None:
-        raise errors.not_found("no wallet for this company")
-    return wallet
-
-
-def wallet_info(company_id: str) -> dict:
-    """README 9.1 `WalletInfo`: 13 fields, no secrets."""
-    wallet = _wallet_or_404(company_id)
-    return {"walletId": wallet["id"], "companyId": wallet["company_id"], "bpn": wallet["bpn"],
-            "provider": wallet["provider"], "providerRef": wallet.get("provider_ref"), "status": wallet["status"],
-            "did": wallet.get("did"), "didDocumentLocation": wallet.get("did_document_location"),
-            "credentialServiceUrl": wallet.get("credential_service_url"),
-            "issuanceMode": _issuance_mode(wallet["provider"]), "supportsWalletAccounts": True,
-            "failureReason": wallet.get("failure_reason"), "activatedAt": _iso(wallet.get("activated_at"))}
-
-
-def wallet_view(company_id: str) -> dict:
-    """README 7.1 openapi `Wallet`: the view of the people of the company, no secrets."""
-    wallet = _wallet_or_404(company_id)
-    return {"companyId": wallet["company_id"], "provider": wallet["provider"], "status": wallet["status"],
-            "did": wallet.get("did"), "didDocumentLocation": wallet.get("did_document_location"),
-            "credentialServiceUrl": wallet.get("credential_service_url"),
-            "bdrsUrl": os.environ.get("BDRS_PUBLIC_URL", "").strip() or None,
-            "stsTokenUrl": (os.environ.get("IDENTITYHUB_STS_TOKEN_URL", "").strip() or None)
-            if wallet["provider"] == "IDENTITY_HUB" else None,
-            "supportsWalletAccounts": True, "failureReason": wallet.get("failure_reason"),
-            "createdAt": _iso(wallet.get("created_at")), "activatedAt": _iso(wallet.get("activated_at"))}
-
-
-def holder_access(company_id: str, claims: dict | str | None = None) -> dict:
-    """README 9.3 for C4-M1: how credentials get into the wallet, with the access needed for that.
-    `claims` are the token claims over HTTP; in the same process the entry holds the name of C4-M1."""
-    wallet = _wallet_or_404(company_id)
-    if wallet["status"] != "ACTIVE":
-        raise errors.wallet_not_active("the wallet is not ACTIVE")
-    access = wallet_secret(wallet["id"], HOLDER_ACCESS)
-    if access is None:
-        raise errors.wallet_not_active("the wallet has no holder access")
-    base = {"issuanceMode": _issuance_mode(wallet["provider"]), "companyId": wallet["company_id"],
-            "bpn": wallet["bpn"], "did": wallet["did"], "provider": wallet["provider"]}
-    if wallet["provider"] == "SAP_DIV":
-        base.update(holder=wallet["did_document_location"], walletUrl=access["url"],
-                    clientId=access["client_id"], clientSecret=access["secret"])
-    else:
-        base.update(identityApiUrl=access["url"], participantContextId=access["client_id"],
-                    apiKey=access["secret"], credentialServiceUrl=wallet.get("credential_service_url"))
-    audit(claims if claims is not None else "c4-m1", "READ_HOLDER_ACCESS", wallet["company_id"], wallet["id"])
-    return base

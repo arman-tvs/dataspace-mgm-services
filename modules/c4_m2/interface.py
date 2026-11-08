@@ -34,7 +34,7 @@ from portal_common import standin
 
 from . import service
 from .errors import MODULE
-from .services import accounts
+from .services import accounts, queries, sap_div_callback
 
 __all__ = ["MODULE"]
 
@@ -62,18 +62,18 @@ def create_wallet(input: dict) -> dict:
 
 def get_wallet_info(*, companyId: str) -> dict:
     """Query `getWalletInfo` (README 9.1): the wallet without secrets."""
-    return service.wallet_info(companyId)
+    return queries.wallet_info(companyId)
 
 
 def wallet_view(*, companyId: str) -> dict:
     """Body of `GET /companies/{companyId}/wallet` (README 7.1, openapi `Wallet`)."""
-    return service.wallet_view(companyId)
+    return queries.wallet_view(companyId)
 
 
 def get_holder_access(*, companyId: str, claims: dict | None = None) -> dict:
     """Query `getHolderAccess` (README 9.3), only for C4-M1. `claims` is set by the HTTP route; in the same
     process the audit entry holds the name of the calling module."""
-    return service.holder_access(companyId, claims)
+    return queries.holder_access(companyId, claims)
 
 
 # ------------------------------------------------------------------- wallet accounts (README 8.2, 8.3, 9.2)
@@ -105,19 +105,19 @@ def retrieve_credentials(technical_user_id: str, claims: dict) -> dict:
 # ------------------------------------------------------------------------ SAP DIV callbacks (README 7.6)
 def accept_sap_div_wallet_callback(bpn: str, body: dict, claims: dict) -> None:
     """The wallet callback of SAP DIV: only its callback client, then README 7.6 steps 1 to 6."""
-    service.authorize_sap_div_callback(claims)
-    service.accept_wallet_callback(bpn, body, claims)
+    sap_div_callback.authorize(claims)
+    sap_div_callback.accept_wallet_callback(bpn, body, claims)
 
 
 def accept_sap_div_account_created(external_id: str, body: dict, claims: dict) -> None:
     """The technical-user callback of SAP DIV (README 7.6)."""
-    service.authorize_sap_div_callback(claims)
+    sap_div_callback.authorize(claims)
     accounts.accept_account_created(external_id, body, claims)
 
 
 def accept_sap_div_account_deleted(external_id: str, claims: dict) -> None:
     """The deletion callback of SAP DIV for a technical user (README 7.6)."""
-    service.authorize_sap_div_callback(claims)
+    sap_div_callback.authorize(claims)
     accounts.accept_account_deleted(external_id, claims)
 
 
