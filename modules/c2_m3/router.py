@@ -59,38 +59,40 @@ def on_event(event: dict) -> None:
 @router.get(COMPANY, summary="List the technical users visible to the company")
 def list_technical_users(companyId: str, page: int = Query(0, ge=0), size: int = Query(20, ge=1, le=100),
                          status: list[Status] | None = Query(None), origin: Origin | None = None,
-                         walletAccess: WalletAccess | None = None, claims: dict = perm("GET", COMPANY)):
+                         walletAccess: WalletAccess | None = None, claims: dict = perm("GET", COMPANY)) -> dict:
     company_scoped(claims, companyId)
     return interface.list_technical_users(company_id=companyId, page=page, size=size, status=status,
                                           origin=origin, wallet_access=walletAccess)
 
 
 @router.post(COMPANY, status_code=201, summary="Create a technical user")
-def create_technical_user(companyId: str, body: dict = Body(...), claims: dict = perm("POST", COMPANY)):
+def create_technical_user(companyId: str, body: dict = Body(...), claims: dict = perm("POST", COMPANY)) -> dict:
     sub = company_scoped(claims, companyId)
     return interface.create_technical_user(company_id=companyId, body=body, actor_sub=sub)
 
 
 @router.get(COMPANY + "/assignable-roles", summary="Roles that the company can assign")
-def list_assignable_roles(companyId: str, lang: str = LANG, claims: dict = perm("GET", COMPANY + "/assignable-roles")):
+def list_assignable_roles(companyId: str, lang: str = LANG, claims: dict = perm("GET", COMPANY + "/assignable-roles"),
+                          ) -> list[dict]:
     company_scoped(claims, companyId)
     return interface.list_assignable_roles(company_id=companyId, lang=lang)
 
 
 @router.get(ACCOUNT, summary="Details of a technical user")
-def get_technical_user(companyId: str, id: str, claims: dict = perm("GET", ACCOUNT)):
+def get_technical_user(companyId: str, id: str, claims: dict = perm("GET", ACCOUNT)) -> dict:
     company_scoped(claims, companyId)
     return interface.get_technical_user(id=id, company_id=companyId)
 
 
 @router.patch(ACCOUNT, summary="Change name, description or roles")
-def update_technical_user(companyId: str, id: str, body: dict = Body(...), claims: dict = perm("PATCH", ACCOUNT)):
+def update_technical_user(companyId: str, id: str, body: dict = Body(...),
+                          claims: dict = perm("PATCH", ACCOUNT)) -> dict:
     sub = company_scoped(claims, companyId)
     return interface.update_technical_user(id=id, company_id=companyId, body=body, actor_sub=sub)
 
 
 @router.delete(ACCOUNT, status_code=204, summary="Delete a technical user")
-def delete_technical_user(companyId: str, id: str, claims: dict = perm("DELETE", ACCOUNT)):
+def delete_technical_user(companyId: str, id: str, claims: dict = perm("DELETE", ACCOUNT)) -> Response:
     sub = company_scoped(claims, companyId)
     status_code, account = interface.delete_technical_user(id=id, company_id=companyId, actor_sub=sub)
     if status_code == 202:
@@ -99,7 +101,7 @@ def delete_technical_user(companyId: str, id: str, claims: dict = perm("DELETE",
 
 
 @router.post(ACCOUNT + "/credentials/rotate", summary="Create a new secret")
-def rotate_credentials(companyId: str, id: str, claims: dict = perm("POST", ACCOUNT + "/credentials/rotate")):
+def rotate_credentials(companyId: str, id: str, claims: dict = perm("POST", ACCOUNT + "/credentials/rotate")) -> dict:
     sub = company_scoped(claims, companyId)
     return interface.rotate_credentials(id=id, company_id=companyId, actor_sub=sub)
 
@@ -109,32 +111,33 @@ def rotate_credentials(companyId: str, id: str, claims: dict = perm("POST", ACCO
 def list_all_technical_users(page: int = Query(0, ge=0), size: int = Query(20, ge=1, le=100),
                              companyId: str | None = None, status: list[Status] | None = Query(None),
                              origin: Origin | None = None, walletAccess: WalletAccess | None = None,
-                             disabled: bool | None = None, _: dict = perm("GET", "/osp/technical-users")):
+                             disabled: bool | None = None, _: dict = perm("GET", "/osp/technical-users")) -> dict:
     return interface.list_all_technical_users(page=page, size=size, company_id=companyId, status=status,
                                               origin=origin, wallet_access=walletAccess, disabled=disabled)
 
 
 @router.get("/osp/technical-users/{id}", summary="Details of any technical user")
-def get_any_technical_user(id: str, _: dict = perm("GET", "/osp/technical-users/{id}")):
+def get_any_technical_user(id: str, _: dict = perm("GET", "/osp/technical-users/{id}")) -> dict:
     return interface.get_any_technical_user(id=id)
 
 
 # -- queries for other modules ----------------------------------------------------------------
 @router.get("/internal/technical-users/{id}", summary="Can the account be used for a connector?")
 def check_technical_user(id: str, companyId: str, offerSubscriptionId: str | None = None,
-                         _: dict = perm("GET", "/internal/technical-users/{id}")):
+                         _: dict = perm("GET", "/internal/technical-users/{id}")) -> dict:
     return interface.check_technical_user(id=id, companyId=companyId, offerSubscriptionId=offerSubscriptionId)
 
 
 @router.post("/internal/technical-users/{id}/credentials/rotate", summary="Rotate a subscription account's secret")
 def rotate_subscription_credentials(id: str, body: dict = Body(...),
-                                    _: dict = perm("POST", "/internal/technical-users/{id}/credentials/rotate")):
+                                    _: dict = perm("POST", "/internal/technical-users/{id}/credentials/rotate"),
+                                    ) -> dict:
     request = parse(SubscriptionCredentialsRequest, body)   # undeclared fields (even `id`) are a 400
     return interface.rotate_subscription_credentials(id=id, offerSubscriptionId=request.offerSubscriptionId)
 
 
 @router.get("/internal/technical-roles", summary="All technical user roles")
-def list_technical_roles(lang: str = LANG, _: dict = perm("GET", "/internal/technical-roles")):
+def list_technical_roles(lang: str = LANG, _: dict = perm("GET", "/internal/technical-roles")) -> list[dict]:
     return interface.list_technical_roles(lang=lang)
 
 
@@ -142,7 +145,7 @@ def list_technical_roles(lang: str = LANG, _: dict = perm("GET", "/internal/tech
 def _register_step(name: str, function: Callable[[dict], dict]) -> None:
     path = f"/steps/{name}"
 
-    def endpoint(body: dict = Body(...), _: dict = perm("POST", path)):
+    def endpoint(body: dict = Body(...), _: dict = perm("POST", path)) -> dict:
         return function(body)
 
     endpoint.__name__ = "step_" + name.replace("-", "_")

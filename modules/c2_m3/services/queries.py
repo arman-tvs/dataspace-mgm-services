@@ -25,13 +25,15 @@
 """Reading operations (README 7.1, 7.3, 7.9, 7.10 and 9.1); they change nothing."""
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from modules.c2_m3.models import DEFAULT_LIST_STATUSES, TechnicalUserRecord, Viewer
 from modules.c2_m3.repository import repository
 
 from . import accounts, projections, state, validation
 
 
-def _statuses(status: str | list[str] | None) -> list[str] | tuple[str, ...]:
+def _statuses(status: str | Sequence[str] | None) -> list[str] | tuple[str, ...]:
     if status is None:
         return DEFAULT_LIST_STATUSES
     return [status] if isinstance(status, str) else list(status)
@@ -53,7 +55,7 @@ def get_any_technical_user(*, id: str, **_other: object) -> dict:
     return projections.details(accounts.find(id), Viewer.OSP)
 
 
-def list_technical_users(*, company_id: str, page: int = 0, size: int = 20, status: str | list[str] | None = None,
+def list_technical_users(*, company_id: str, page: int = 0, size: int = 20, status: str | Sequence[str] | None = None,
                          origin: str | None = None, wallet_access: str | None = None, **_other: object) -> dict:
     rows = repository.find(visible_to=company_id, statuses=_statuses(status), origin=origin,
                            wallet_access=wallet_access)
@@ -65,7 +67,7 @@ def _viewer(row: TechnicalUserRecord, company_id: str) -> Viewer:
 
 
 def list_all_technical_users(*, page: int = 0, size: int = 20, company_id: str | None = None,
-                             status: str | list[str] | None = None, origin: str | None = None,
+                             status: str | Sequence[str] | None = None, origin: str | None = None,
                              wallet_access: str | None = None, disabled: bool | None = None, **_other: object) -> dict:
     rows = repository.find(owner_company_id=company_id, statuses=_statuses(status), origin=origin,
                            wallet_access=wallet_access, disabled=disabled)
