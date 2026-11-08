@@ -36,7 +36,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from conftest import BASE, bearer, person_token
-from modules.c1_m2 import attestation, interface, router
+from modules.c1_m2 import attestation, interface, router, store
 from portal_common import events, problems
 from portal_common import http as phttp
 from portal_common.problems import Problem
@@ -223,7 +223,7 @@ def test_02_invalid_attestations(client, env, monkeypatch, change, reason):
         monkeypatch.setenv("ATTESTATION_CLIENT_IDS", "demo-osp")
     r = client.post(api("/applications"), headers=_h("erika"), json=onboarding(token))
     assert r.status_code == 400 and r.json()["type"] == "urn:c1-m2:problem:attestation-invalid"
-    assert r.json()["reason"] == reason and not interface.applications
+    assert r.json()["reason"] == reason and not store.applications
 
 
 def test_02_jwks_not_reachable_is_502(client, env, monkeypatch):
@@ -242,7 +242,7 @@ def test_03_person_binding(client, env):
 # ------------------------------------------------------------------------ 4 to 9: applications
 def test_04_bound_account(client, env):
     r = client.post(api("/applications"), headers=_h("bound"), json=onboarding(env.sign()))
-    assert r.status_code == 403 and r.json()["type"] == "urn:c1-m2:problem:account-bound" and not interface.applications
+    assert r.status_code == 403 and r.json()["type"] == "urn:c1-m2:problem:account-bound" and not store.applications
     assert client.get(api("/applications"), headers=_h("bound")).status_code == 200
 
 
@@ -310,9 +310,9 @@ def test_10_submit(client, env):
     r = submit(client, aid)
     assert r.status_code == 200 and r.json()["status"] == "SUBMITTED" and r.json()["submittedAt"]
     assert {c["language"] for c in r.json()["consents"]} == {"de", "en"}
-    records = interface.applications[aid]["_consentRecords"]
+    records = store.applications[aid]["_consentRecords"]
     assert {x["givenBySub"] for x in records} == {ERIKA}
-    assert {x["attestationId"] for x in records} == {interface.applications[aid]["_attestation"]["attestationId"]}
+    assert {x["attestationId"] for x in records} == {store.applications[aid]["_attestation"]["attestationId"]}
     assert events_of("ApplicationSubmitted")[0]["applicantSub"] == ERIKA
     assert submit(client, aid).status_code == 200 and len(events_of("ApplicationSubmitted")) == 1
 
@@ -435,7 +435,7 @@ def test_18_withdraw(client, env):
     assert r.status_code == 409 and r.json()["type"] == "urn:c1-m2:problem:already-decided" and r.json()["reviewStatus"] == "APPROVED"
     env.write(env.reviews, "unavailable")
     r = client.post(url, headers=_h("erika"))
-    assert r.status_code == 502 and interface.applications[aid]["status"] == "SUBMITTED"
+    assert r.status_code == 502 and store.applications[aid]["status"] == "SUBMITTED"
     env.write(env.reviews, [{"applicationId": aid, "status": "OPEN"}])
     assert client.post(url, headers=_h("erika")).json()["status"] == "WITHDRAWN"
     [ev] = events_of("ApplicationWithdrawn")
@@ -465,7 +465,7 @@ def test_20_osp_staff(client, env):
     r = client.get(api(f"/osp/applications/{aid}/documents/{doc}"), headers=_h("rolf"))
     assert r.status_code == 200 and r.content == PDF and r.headers["x-content-type-options"] == "nosniff"
     assert "attachment" in r.headers["content-disposition"]
-    assert any(x["operation"] == "getAnyDocument" and x["objectId"] == doc for x in interface.audit_log)
+    assert any(x["operation"] == "getAnyDocument" and x["objectId"] == doc for x in store.audit_log)
     assert client.get(api("/osp/applications"), headers=_h("erika")).status_code == 403
     iam = test_iam.iam()
     iam.first_login(NO_PERMISSIONS, "Nora", "Norights", key="norights")   # 14.1, not in testdata/
@@ -513,7 +513,7 @@ def test_23_close(client, env):
     assert step(interface.close_application, aid, reason="Register extract too old")["result"]["status"] == "DECLINED"
     assert client.get(api(f"/applications/{aid}"), headers=_h("erika")).json()["declineReason"] == "Register extract too old"
     step(interface.close_application, aid, reason="Another reason")
-    assert interface.applications[aid]["declineReason"] == "Register extract too old"
+    assert store.applications[aid]["declineReason"] == "Register extract too old"
     other = created(client, env)["id"]
     client.post(api(f"/applications/{other}/withdraw"), headers=_h("erika"))
     r = step(interface.close_application, other, reason="x")
@@ -549,11 +549,11 @@ def test_26_audit_and_no_personal_data(client, env):
     aid = client.post(api("/applications"), headers=_h("erika"), json=onboarding(token)).json()["id"]
     submit(client, aid)
     step(interface.complete_application, aid)
-    ops = [(x["operation"], x["sub"], x["companyId"]) for x in interface.audit_log]
-    company = interface.applications[aid]["companyId"]
+    ops = [(x["operation"], x["sub"], x["companyId"]) for x in store.audit_log]
+    company = store.applications[aid]["companyId"]
     assert ops == [("createApplication", ERIKA, company), ("submitApplication", ERIKA, company),
                    ("stepCompleteApplication", None, company)]
-    text = json.dumps(events.RELAY.log) + json.dumps(interface.audit_log)
+    text = json.dumps(events.RELAY.log) + json.dumps(store.audit_log)
     for secret in (token, "Mustermann", "Erika"):
         assert secret not in text
     assert token not in json.dumps(client.get(api(f"/applications/{aid}"), headers=_h("erika")).json())
@@ -564,10 +564,10 @@ def test_26_audit_and_no_personal_data(client, env):
 @pytest.mark.parametrize("change", [{"identifiers": []}, {"identifiers": None}, {"legalName": None}, {"address": None}])
 def test_patch_keeps_required_company_data(client, env, change):
     aid = client.post(api("/applications"), headers=_h("erika"), json=documents_body()).json()["id"]
-    before = json.dumps(interface.applications[aid]["companyData"])
+    before = json.dumps(store.applications[aid]["companyData"])
     r = client.patch(api(f"/applications/{aid}"), headers=_h("erika"), json=change)
     assert r.status_code == 400 and r.json()["type"] == "urn:c1-m2:problem:validation"
-    assert json.dumps(interface.applications[aid]["companyData"]) == before
+    assert json.dumps(store.applications[aid]["companyData"]) == before
 
 
 def test_patch_without_identifiers_of_the_person_on_the_ebw_path(client, env):
@@ -599,7 +599,7 @@ def test_reference_in_a_wrong_format(client, env, reference):
     {"representation": {"confirmed": True, "reasons": "x"}}])
 def test_signed_attestation_with_malformed_claims(client, env, over):
     r = client.post(api("/applications"), headers=_h("erika"), json=onboarding(env.sign(payload=env.payload() | over)))
-    assert r.status_code == 400 and r.json()["reason"] == "claims" and not interface.applications
+    assert r.status_code == 400 and r.json()["reason"] == "claims" and not store.applications
 
 
 def test_issuer_not_configured_names_the_variable(client, env, monkeypatch):
@@ -630,7 +630,7 @@ def test_replacement_checks_the_new_identifiers(client, env):
     wrong_country = env.payload() | {"company": {**_without_euid(env)["company"], "euid": "FRXX001T.HRB100001"}}
     r = client.put(api(f"/applications/{aid}/attestation"), headers=_h("erika"), json={"attestation": env.sign(payload=wrong_country)})
     assert r.status_code == 400 and r.json()["type"] == "urn:c1-m2:problem:validation"
-    assert [i["type"] for i in interface.applications[aid]["companyData"]["identifiers"]] == ["EBWOID", "VAT_ID"]
+    assert [i["type"] for i in store.applications[aid]["companyData"]["identifiers"]] == ["EBWOID", "VAT_ID"]
 
 
 def test_replacement_checks_the_existing_company(client, env):
@@ -676,12 +676,12 @@ def test_document_changes_cannot_follow_a_submission(client, env):
     actions = [lambda: interface.upload_document(aid, ERIKA, "OTHER", "late.pdf", PDF),
                lambda: interface.delete_document(aid, doc, ERIKA)]
     for action in actions:
-        interface.applications[aid]["status"] = "CREATED"
+        store.applications[aid]["status"] = "CREATED"
         outcome, thread = _during_submission(env, client, action)
-        with interface._lock:
+        with store.lock:
             thread.start()
             time.sleep(0.2)
-            interface.applications[aid]["status"] = "SUBMITTED"
+            store.applications[aid]["status"] = "SUBMITTED"
         thread.join(5)
         assert isinstance(outcome[0], Problem) and outcome[0].status == 409
-    assert [d["documentId"] for d in interface.applications[aid]["documents"]] == [doc]
+    assert [d["documentId"] for d in store.applications[aid]["documents"]] == [doc]
