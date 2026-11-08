@@ -77,17 +77,17 @@ def disable_subscription_technical_users(input: dict) -> dict:
 
 # -- queries for other modules (README 9): parameters by their openapi names ------------------------
 def check_technical_user(*, id: str, companyId: str | None = None, offerSubscriptionId: str | None = None,
-                         **_other) -> dict:
+                         **_other: object) -> dict:
     """9.1: always answers; an unknown ID gives `exists: false`."""
     return services.check_technical_user(id=id, company_id=companyId, offer_subscription_id=offerSubscriptionId)
 
 
-def rotate_subscription_credentials(*, id: str, offerSubscriptionId: str | None = None, **other) -> dict:
+def rotate_subscription_credentials(*, id: str, offerSubscriptionId: str | None = None, **other: object) -> dict:
     """9.2: a new secret of the subscription account, only in this answer."""
     return services.rotate_subscription_credentials(id=id, offer_subscription_id=offerSubscriptionId, **other)
 
 
-def list_technical_roles(*, lang: str | None = None, **_other) -> list[dict]:
+def list_technical_roles(*, lang: str | None = None, **_other: object) -> list[dict]:
     """9.3: all roles of the technical roles client."""
     return services.list_technical_roles(lang=lang)
 

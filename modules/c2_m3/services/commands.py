@@ -121,7 +121,9 @@ def delete_technical_user(*, id: str, company_id: str, actor_sub: str) -> tuple[
         state.require_deletable(row)
         if gateways.connector_uses(id):
             raise errors.in_use()
-        if row["origin"] == Origin.SUBSCRIPTION and gateways.subscription_is_active(row["offer_subscription_id"]):
+        subscription_id = row["offer_subscription_id"]   # set for every account of origin SUBSCRIPTION
+        if (row["origin"] == Origin.SUBSCRIPTION and subscription_id
+                and gateways.subscription_is_active(subscription_id)):
             raise errors.in_use()
         if state.needs_wallet_removal(row):
             state.request_removal(row)
@@ -144,7 +146,7 @@ def rotate_credentials(*, id: str, company_id: str, actor_sub: str) -> dict:
         return projections.credentials(row, secret)
 
 
-def rotate_subscription_credentials(*, id: str, offer_subscription_id: str | None = None, **other) -> dict:
+def rotate_subscription_credentials(*, id: str, offer_subscription_id: str | None = None, **other: object) -> dict:
     request = {} if offer_subscription_id is None else {"offerSubscriptionId": offer_subscription_id}
     # the whole request is validated (undeclared fields are a 400) before the secret is touched
     subscription_id = schemas.parse(SubscriptionCredentialsRequest, request | other).offerSubscriptionId

@@ -100,10 +100,11 @@ class KeycloakIAM:
             self._token = (body["access_token"], time.time() + int(body.get("expires_in", 60)))
         return body["access_token"]
 
-    def _call(self, method: str, path: str, *, accept: tuple[int, ...] = (), **kwargs) -> httpx.Response:
+    def _call(self, method: str, path: str, *, accept: tuple[int, ...] = (), json: object = None,
+              params: dict[str, str | int] | None = None) -> httpx.Response:
         def send(fresh: bool) -> httpx.Response:
-            return http.request(method, self.base_url + path,
-                                headers={"Authorization": f"Bearer {self._access_token(fresh=fresh)}"}, **kwargs)
+            return http.request(method, self.base_url + path, json=json, params=params,
+                                headers={"Authorization": f"Bearer {self._access_token(fresh=fresh)}"})
         response = send(False)
         if response.status_code == 401:
             response = send(True)

@@ -44,17 +44,17 @@ def _page(rows: list[dict], *, page: int, size: int) -> dict:
     return {"items": rows[start:start + size], "page": page, "size": size, "total": len(rows)}
 
 
-def get_technical_user(*, id: str, company_id: str, **_other) -> dict:
+def get_technical_user(*, id: str, company_id: str, **_other: object) -> dict:
     row = accounts.find(id)
     return projections.details(row, accounts.viewer_of(row, company_id))
 
 
-def get_any_technical_user(*, id: str, **_other) -> dict:
+def get_any_technical_user(*, id: str, **_other: object) -> dict:
     return projections.details(accounts.find(id), Viewer.OSP)
 
 
 def list_technical_users(*, company_id: str, page: int = 0, size: int = 20, status: str | list[str] | None = None,
-                         origin: str | None = None, wallet_access: str | None = None, **_other) -> dict:
+                         origin: str | None = None, wallet_access: str | None = None, **_other: object) -> dict:
     rows = repository.find(visible_to=company_id, statuses=_statuses(status), origin=origin,
                            wallet_access=wallet_access)
     return _page([projections.summary(row, _viewer(row, company_id)) for row in rows], page=page, size=size)
@@ -66,14 +66,14 @@ def _viewer(row: TechnicalUserRecord, company_id: str) -> Viewer:
 
 def list_all_technical_users(*, page: int = 0, size: int = 20, company_id: str | None = None,
                              status: str | list[str] | None = None, origin: str | None = None,
-                             wallet_access: str | None = None, disabled: bool | None = None, **_other) -> dict:
+                             wallet_access: str | None = None, disabled: bool | None = None, **_other: object) -> dict:
     rows = repository.find(owner_company_id=company_id, statuses=_statuses(status), origin=origin,
                            wallet_access=wallet_access, disabled=disabled)
     return _page([projections.summary(row, Viewer.OSP) for row in rows], page=page, size=size)
 
 
 def check_technical_user(*, id: str, company_id: str | None = None, offer_subscription_id: str | None = None,
-                         **_other) -> dict:
+                         **_other: object) -> dict:
     """9.1: always answers, an unknown ID gives `exists: false`."""
     row = repository.get(id)
     if row is None:

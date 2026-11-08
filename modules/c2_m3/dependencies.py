@@ -30,8 +30,9 @@ from portal_common import standin
 from .config import MODULE
 
 
-def perm(method: str, path: str):
-    """The token check with the `x-permission` that `openapi.yaml` declares for this operation."""
+def perm(method: str, path: str) -> dict:
+    """The token check with the `x-permission` that `openapi.yaml` declares for this operation. Used as the default
+    of a parameter, FastAPI replaces the dependency with the claims: typed as the value the parameter receives."""
     return standin.perm(MODULE, method, path)
 
 
