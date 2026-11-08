@@ -102,15 +102,15 @@
       "ruff": 6
     },
     "modules/c4_m2": {
-      "contract": 25,
-      "file-size": 1,
+      "contract": 17,
+      "file-size": 0,
       "http-body": 5,
       "http-route": 24,
-      "layers": 2,
-      "mypy": 26,
-      "neighbours": 2,
-      "problems": 11,
-      "ruff": 27
+      "layers": 0,
+      "mypy": 0,
+      "neighbours": 0,
+      "problems": 0,
+      "ruff": 0
     },
     "modules/c6_m1": {
       "contract": 22,
