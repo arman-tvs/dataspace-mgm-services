@@ -22,7 +22,8 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""Calls of C1-M2 to its neighbours (README 11) with the built-in stand-ins.
+"""Gateways of C1-M2 to its neighbours (README 11, ADR-0003), with the built-in stand-ins; the only file that
+imports `portal_common.neighbours`.
 
 Address per FRAMEWORK 4.7 through `portal_common.neighbours`: `in-process` or a URL calls the neighbour, an
 empty address answers from `STUB_COMPANIES_FILE` and `STUB_REVIEWS_FILE` (README 14.5). The files are read on

@@ -23,7 +23,7 @@
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
 """Public interface of C1-M2 Registration: the steps `complete-application` and `close-application`, the
-queries 9.1 to 9.3, and the operations of people and OSP staff that `router.py` calls.
+queries 9.1 to 9.3, and the operations of people and OSP staff that `router.py` gateways.
 
 Applications, consents, supporting documents and the audit log are kept in memory (README 5); one lock
 stands for the row locks and partial unique indexes of 6.11. Calls to neighbours and to the JWKS run outside it.
@@ -43,7 +43,7 @@ from portal_common import events
 from portal_common.problems import Problem
 from tools import testdata
 
-from . import attestation, calls, catalog, errors
+from . import attestation, catalog, errors, gateways
 from .errors import FieldError
 
 MODULE = "c1-m2"
@@ -108,7 +108,7 @@ def _review_status(a: dict) -> str:
     if a["status"] == "CREATED":
         return "NONE"
     try:
-        return calls.review_status(a["id"]) or "NONE"
+        return gateways.review_status(a["id"]) or "NONE"
     except Problem:
         return "UNKNOWN"
 
@@ -361,7 +361,7 @@ def _check_existing_identifiers(company: dict, ebwoid: str | None, euid: str | N
 
 def _company_for_reference(body: dict, kind: str) -> dict:
     """6.2: read the company at C3-M1 and check that status and reason fit the application kind."""
-    company = calls.company_by_id(body["companyId"]) if body.get("companyId") else calls.company_by_bpn(body["bpn"])
+    company = gateways.company_by_id(body["companyId"]) if body.get("companyId") else gateways.company_by_bpn(body["bpn"])
     if company is None:
         raise errors.company_unknown()
     transferred = company.get("deactivationReason") == "TRANSFERRED"
@@ -500,7 +500,7 @@ def update_application(application_id: str, sub: str, body: dict) -> dict:
     company_claim = (a.get("_attestationClaims") or {}).get("company")
     given = {**a["_given"], **{k: v for k, v in change.items() if k != "companyRoles"}}
     if "identifiers" in change and a["_companyRef"]:
-        company = calls.company_by_id(a["companyId"]) or {}
+        company = gateways.company_by_id(a["companyId"]) or {}
         euid = (company_claim or {}).get("euid") or _given_identifiers(given).get("EUID")
         _check_existing_identifiers(company, (company_claim or {}).get("ebwoid"), euid)
     data, comparison = _build_company_data(a["verification"], company_claim, given)
@@ -541,7 +541,7 @@ def replace_attestation(application_id: str, claims: dict, token: object) -> dic
     data, comparison = _company_data_ebw(new, a["_given"])
     _check_reference_data(data, a["companyRoles"], a["verification"])
     if a["_companyRef"]:
-        _check_existing_identifiers(calls.company_by_id(a["companyId"]) or {}, new["ebwoid"], euid or applicant_euid)
+        _check_existing_identifiers(gateways.company_by_id(a["companyId"]) or {}, new["ebwoid"], euid or applicant_euid)
     with _lock:
         if payload["jti"] in used_jtis:
             raise errors.attestation_used()
@@ -608,7 +608,7 @@ def withdraw_application(application_id: str, sub: str) -> dict:
     if a["status"] not in OPEN:
         raise errors.invalid_state(f"application is {a['status']}")
     if a["status"] == "SUBMITTED":
-        review = calls.review_status(a["id"])   # not reachable: 502, nothing changed
+        review = gateways.review_status(a["id"])   # not reachable: 502, nothing changed
         if review in ("APPROVED", "DECLINED"):
             raise errors.already_decided(review)
     with _lock:
