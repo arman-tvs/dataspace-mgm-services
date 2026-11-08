@@ -35,10 +35,9 @@ import threading
 
 import httpx
 
+from modules.c4_m2 import errors
+from modules.c4_m2.adapters import common
 from portal_common import http
-
-from . import errors
-from . import providers_common as common
 
 PROVIDER = "IDENTITY_HUB"
 DEFAULT_DID_BASE = "ih.example.org"
@@ -118,9 +117,6 @@ class IdentityHubAdapter:
 
     def did_for(self, bpn: str) -> str:
         return f"did:web:{_did_base()}:{bpn}"
-
-    def callback_router(self):
-        return None
 
     def _call(self, method: str, path: str, body: dict | None = None) -> tuple[int, dict | None]:
         if os.environ.get("IDENTITYHUB_URL", "").strip():

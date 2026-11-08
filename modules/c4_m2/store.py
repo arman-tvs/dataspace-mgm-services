@@ -35,7 +35,8 @@ import contextlib
 import copy
 import datetime as dt
 import threading
-from typing import Any, Iterator, Protocol
+from collections.abc import Iterator
+from typing import Any, Protocol
 
 
 class WalletStore(Protocol):
@@ -97,10 +98,10 @@ def _when(value: Any) -> dt.datetime:
         try:
             value = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
-            return dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+            return dt.datetime.min.replace(tzinfo=dt.UTC)
     if not isinstance(value, dt.datetime):
-        return dt.datetime.min.replace(tzinfo=dt.timezone.utc)
-    return value if value.tzinfo else value.replace(tzinfo=dt.timezone.utc)
+        return dt.datetime.min.replace(tzinfo=dt.UTC)
+    return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
 
 
 class InMemoryStore:
@@ -153,7 +154,7 @@ class InMemoryStore:
                    nonce: bytes, key_version: int) -> None:
         row = {"wallet_id": wallet_id, "kind": kind, "url": url, "client_id": client_id,
                "secret_encrypted": bytes(secret_encrypted), "nonce": bytes(nonce), "key_version": key_version,
-               "created_at": dt.datetime.now(dt.timezone.utc)}
+               "created_at": dt.datetime.now(dt.UTC)}
         with self._data:
             self._secrets[(wallet_id, kind)] = row
 

@@ -24,26 +24,24 @@
 #################################################################################
 """Provider adapters of C4-M2: the registry, the choice of the provider (README 6.1) and the stand-in helpers.
 
-The adapters (README 6.11) are in `providers_sap_div.py`, `providers_identity_hub.py` and `providers_csp.py`; the
-SAP DIV callback routes in `providers_callbacks.py`. Everything the core (`service.py`) and the tests need is
-reached through this file: `get`, `enabled`, `default_provider`, `callback_routers`, `stand_in_documents`,
+The adapters (README 6.11) are in `adapters/` (`sap_div.py`, `identity_hub.py`, `csp.py`), each a
+`WalletProvider` (`adapters/base.py`); their callbacks are routes of `router.py`. Everything the core (`service.py`)
+and the tests need is reached through this file: `get`, `enabled`, `default_provider`, `stand_in_documents`,
 `orders`, `flush_stand_in` and `reset`. Environment variables are read at call time.
 """
 from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter
-
-from . import providers_common as common
-from . import providers_csp, providers_identity_hub, providers_sap_div
+from .adapters import common, csp, identity_hub, sap_div
+from .adapters.base import WalletProvider
 
 PROVIDERS = ("SAP_DIV", "IDENTITY_HUB", "CSP")
-_ADAPTERS = {"SAP_DIV": providers_sap_div.SapDivAdapter(), "IDENTITY_HUB": providers_identity_hub.IdentityHubAdapter(),
-             "CSP": providers_csp.CspAdapter()}
+_ADAPTERS: dict[str, WalletProvider] = {"SAP_DIV": sap_div.SapDivAdapter(),
+                                        "IDENTITY_HUB": identity_hub.IdentityHubAdapter(), "CSP": csp.CspAdapter()}
 
 
-def get(provider: str):
+def get(provider: str) -> WalletProvider:
     """The adapter of `SAP_DIV`, `IDENTITY_HUB` or `CSP`."""
     try:
         return _ADAPTERS[provider]
@@ -63,11 +61,6 @@ def default_provider() -> str:
     return os.environ.get("DEFAULT_PROVIDER", "").strip().upper() or "CSP"
 
 
-def callback_routers() -> list[APIRouter]:
-    """The routers of the adapters that get callbacks (README 7.6), without prefix."""
-    routers = [adapter.callback_router() for adapter in _ADAPTERS.values()]
-    return [router for router in routers if router is not None]
-
 
 def stand_in_documents() -> dict[str, dict]:
     """DID -> DID document of every built-in stand-in wallet, for the built-in resolution (README 11.4)."""
@@ -84,9 +77,14 @@ def flush_stand_in() -> None:
     common.flush()
 
 
+def register_callbacks(handlers: common.Callbacks) -> None:
+    """The handlers that receive the callbacks of the built-in stand-ins (set by `service.py`)."""
+    common.register_callbacks(handlers)
+
+
 def reset() -> None:
     """Forget orders, documents, pending callbacks and the state of the built-in stand-ins."""
     common.reset()
-    providers_sap_div.reset()
-    providers_identity_hub.reset()
-    providers_csp.reset()
+    sap_div.reset()
+    identity_hub.reset()
+    csp.reset()

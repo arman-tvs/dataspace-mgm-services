@@ -24,11 +24,9 @@
 #################################################################################
 """HTTP layer of C4-M2 Dataspace Wallet Interface: token, permission and scope, then the interface function.
 
-Routes of this file: `POST /steps/create-wallet`, `GET /companies/{companyId}/wallet`,
-`GET /internal/wallets/{companyId}` and `GET /internal/wallets/{companyId}/holder-access`. The wallet
-account routes (`accounts.router`) and the SAP DIV callback routes (`providers.callback_routers()`) belong
-to other files of the module and are mounted here when those files exist. Operations that are not
-implemented yet are answered by the scaffold from the spec.
+Every route of the module is here (ADR-0003: HTTP only in the router): the wallet (README 7.1, 8.1, 9.1,
+9.3), the wallet accounts (README 8.2, 8.3, 9.2) and the callbacks of SAP DIV (README 7.6), in this order.
+Operations that are not implemented are answered by the scaffold from the spec.
 """
 from __future__ import annotations
 
@@ -36,7 +34,7 @@ from fastapi import Body, Response
 
 from portal_common import standin
 
-from . import interface, service
+from . import interface
 from .interface import MODULE
 
 router = standin.router(MODULE)
@@ -48,41 +46,89 @@ def reset() -> None:
 
 def on_startup() -> None:
     """Start the scheduled tasks of README 6.10."""
-    service.start_timer()
+    interface.start_timer()
 
 
+# ------------------------------------------------------------------------------------------- wallet
 @router.post("/steps/create-wallet")
-def create_wallet(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/create-wallet")):
+def create_wallet(body: dict = Body(...), _: dict = standin.perm(MODULE, "POST", "/steps/create-wallet")) -> dict:
     return interface.create_wallet(body)
 
 
 @router.get("/companies/{companyId}/wallet")
-def own_wallet(companyId: str, claims: dict = standin.perm(MODULE, "GET", "/companies/{companyId}/wallet")):
+def own_wallet(companyId: str, claims: dict = standin.perm(MODULE, "GET", "/companies/{companyId}/wallet")) -> dict:
     standin.company_scope(MODULE, claims, companyId)
     return interface.wallet_view(companyId=companyId)
 
 
 @router.get("/internal/wallets/{companyId}")
-def get_wallet(companyId: str, _: dict = standin.perm(MODULE, "GET", "/internal/wallets/{companyId}")):
+def get_wallet(companyId: str, _: dict = standin.perm(MODULE, "GET", "/internal/wallets/{companyId}")) -> dict:
     return interface.get_wallet_info(companyId=companyId)
 
 
 @router.get("/internal/wallets/{companyId}/holder-access")
 def holder_access(companyId: str, response: Response,
-                  claims: dict = standin.perm(MODULE, "GET", "/internal/wallets/{companyId}/holder-access")):
+                  claims: dict = standin.perm(MODULE, "GET", "/internal/wallets/{companyId}/holder-access")) -> dict:
     response.headers["Cache-Control"] = "no-store"
     return interface.get_holder_access(companyId=companyId, claims=claims)
 
 
-def _mount_other_files() -> None:
-    """Wallet accounts and SAP DIV callbacks are written in `accounts.py` and `providers.py`."""
-    accounts = service.optional_module("accounts")
-    if accounts is not None and hasattr(accounts, "router"):
-        router.include_router(accounts.router)
-    providers = service.providers_module()
-    if providers is not None and hasattr(providers, "callback_routers"):
-        for callback_router in providers.callback_routers():
-            router.include_router(callback_router)
+# ---------------------------------------------------------------------------------- wallet accounts
+@router.post("/steps/create-wallet-account")
+def step_create_wallet_account(body: dict = Body(...),
+                               _: dict = standin.perm(MODULE, "POST", "/steps/create-wallet-account")) -> dict:
+    return interface.create_wallet_account(body)
 
 
-_mount_other_files()
+@router.post("/steps/delete-wallet-account")
+def step_delete_wallet_account(body: dict = Body(...),
+                               _: dict = standin.perm(MODULE, "POST", "/steps/delete-wallet-account")) -> dict:
+    return interface.delete_wallet_account(body)
+
+
+@router.get("/technical-users/{technicalUserId}/wallet-account")
+def get_wallet_account(technicalUserId: str,
+                       claims: dict = standin.perm(MODULE, "GET",
+                                                   "/technical-users/{technicalUserId}/wallet-account")) -> dict:
+    return interface.view_wallet_account(technicalUserId, claims)
+
+
+@router.post("/technical-users/{technicalUserId}/wallet-account/credentials")
+def post_wallet_account_credentials(
+        technicalUserId: str, response: Response,
+        claims: dict = standin.perm(MODULE, "POST",
+                                    "/technical-users/{technicalUserId}/wallet-account/credentials")) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    return interface.retrieve_credentials(technicalUserId, claims)
+
+
+@router.get("/internal/technical-users/{technicalUserId}/wallet-account")
+def get_wallet_account_internal_route(
+        technicalUserId: str,
+        _: dict = standin.perm(MODULE, "GET", "/internal/technical-users/{technicalUserId}/wallet-account")) -> dict:
+    return interface.get_wallet_account_internal(technicalUserId=technicalUserId)
+
+
+# -------------------------------------------------------------------------- SAP DIV callbacks (README 7.6)
+@router.post("/callbacks/sap-div/wallets/{bpn}")
+def sap_div_wallet_created(bpn: str, body: dict = Body(...),
+                           claims: dict = standin.perm(MODULE, "POST", "/callbacks/sap-div/wallets/{bpn}")) -> Response:
+    interface.accept_sap_div_wallet_callback(bpn, body, claims)
+    return Response(status_code=204)
+
+
+@router.post("/callbacks/sap-div/technical-users/{externalId}")
+def sap_div_account_created(externalId: str, body: dict = Body(...),
+                            claims: dict = standin.perm(MODULE, "POST",
+                                                        "/callbacks/sap-div/technical-users/{externalId}")) -> Response:
+    interface.accept_sap_div_account_created(externalId, body, claims)
+    return Response(status_code=204)
+
+
+@router.post("/callbacks/sap-div/technical-users/{externalId}/delete")
+def sap_div_account_deleted(externalId: str,
+                            claims: dict = standin.perm(MODULE, "POST",
+                                                        "/callbacks/sap-div/technical-users/{externalId}/delete")
+                            ) -> Response:
+    interface.accept_sap_div_account_deleted(externalId, claims)
+    return Response(status_code=204)

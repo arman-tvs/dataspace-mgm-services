@@ -22,142 +22,103 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: Claude Code (claude-opus-5-5)
 #################################################################################
-"""Public interface of the C4-M2 stand-in: `create-wallet` and the wallet queries.
+"""Public interface of C4-M2 Dataspace Wallet Interface (call convention of AGENTS.md; ADR-0003 "facade").
 
-Provider: the dataspace wallet of the CSP when `CSP_WALLET_URL` is set (C4-M2 11.3, e.g. the
-shared CSP stand-in `/wallet/v1`), otherwise `STUB` (DID `did:web:wallet.example.org:<BPN>`).
-The holder access (API key) stays in memory and is only returned by the query for C4-M1.
+Steps for Process Orchestration (README 8), the queries for other modules (README 9) and the operations the
+router serves (README 7), each a one-line delegation. The rules are in `service.py` and `services/`, the
+providers behind `providers.py` (adapters), the neighbours in `gateways.py`, the data in `store.py`.
 """
 from __future__ import annotations
 
-import os
+from portal_common import standin
 
-from portal_common import csp, events, neighbours, standin
-from portal_common.problems import Problem
+from . import service
+from .errors import MODULE
+from .services import accounts
 
-from . import crypto, service
-from .store import WalletStore
-
-MODULE = "c4-m2"
-wallets: dict[str, dict] = {}
+__all__ = ["MODULE"]
 
 
-def store() -> WalletStore:
-    """The active store."""
+def store() -> service.WalletStore:
+    """The active store (also the seam of the tests)."""
     return service.get_store()
 
 
 def reset() -> None:
-    """Clear the store, the key cache and the helpers of the providers and accounts files, if they exist."""
-    wallets.clear()
-    service.reset()
-    crypto.reset()
-    for name in ("providers", "accounts"):
-        module = service.optional_module(name)
-        if module is not None and hasattr(module, "reset"):
-            module.reset()
+    """Stop the timer; clear the store, the key cache and the state of the providers."""
+    service.reset_all()
 
 
-def _implemented() -> bool:
-    """The real implementation needs the provider adapters (providers.py). Until that file exists in the
-    module, the stand-in below answers, so that the flows of demo.py keep working."""
-    return service.providers_module() is not None
+def start_timer() -> None:
+    """Start the scheduled tasks of README 6.10."""
+    service.start_timer()
 
 
+# ---------------------------------------------------------------------------- wallet (README 8.1, 9)
 def create_wallet(input: dict) -> dict:
     """Step `create-wallet` (README 8.1)."""
-    if _implemented():
-        return service.create_wallet(input)
-    return _standin_create_wallet(input)
-
-
-def _standin_create_wallet(input: dict) -> dict:
-    cid = input.get("companyId")
-    if cid not in wallets:
-        company = neighbours.query(MODULE, "c3-m1", "query_company", companyId=cid)
-        if not company or not company.get("bpn"):
-            raise Problem(MODULE, 409, "invalid-state", detail="company without BPN", retryable=False)
-        bpn, url = company["bpn"], os.environ.get("CSP_WALLET_URL", "")
-        if url:
-            try:
-                status, answer = csp.request(url, "POST", "/wallets", {"bpn": bpn})
-            except csp.CspUnavailable as e:
-                raise Problem(MODULE, 502, "upstream-error", detail=str(e), retryable=True) from e
-            if status != 201:
-                raise Problem(MODULE, 409 if status in (403, 409) else 502,
-                              "provider-rejected" if status in (403, 409) else "upstream-error",
-                              detail=f"CSP wallet answered {status}", retryable=status >= 500)
-            wallets[cid] = {"walletId": standin.stable_id("wallet", cid), "companyId": cid, "bpn": bpn,
-                            "status": "ACTIVE", "provider": "CSP", "issuanceMode": "HOLDER_REQUESTS",
-                            "supportsWalletAccounts": True,
-                            "did": answer["did"], "providerRef": answer["participantContextId"],
-                            "_holder": {k: answer[k] for k in ("identityApiUrl", "participantContextId", "apiKey")}}
-        else:
-            wallets[cid] = {"walletId": standin.stable_id("wallet", cid), "companyId": cid, "bpn": bpn,
-                            "status": "ACTIVE", "provider": "STUB", "issuanceMode": "STUB", "supportsWalletAccounts": False,
-                            "did": f"did:web:wallet.example.org:{bpn}", "providerRef": None, "_holder": None}
-        w = wallets[cid]
-        events.publish(MODULE, "DataspaceWalletCreated", {
-            "companyId": cid, "did": w["did"], "walletId": w["walletId"], "provider": w["provider"],
-            "didDocumentLocation": service.did_web_location(w["did"]), "bpn": bpn})
-    return standin.step_reply(input, state="RUNNING")   # long-running; completed by DataspaceWalletCreated
-
-
-def _wallet(cid: str) -> dict:
-    if cid not in wallets:
-        raise Problem(MODULE, 404, "not-found")
-    return wallets[cid]
+    return service.create_wallet(input)
 
 
 def get_wallet_info(*, companyId: str) -> dict:
     """Query `getWalletInfo` (README 9.1): the wallet without secrets."""
-    if _implemented():
-        return service.wallet_info(companyId)
-    return {k: v for k, v in _wallet(companyId).items() if not k.startswith("_")}
+    return service.wallet_info(companyId)
 
 
 def wallet_view(*, companyId: str) -> dict:
     """Body of `GET /companies/{companyId}/wallet` (README 7.1, openapi `Wallet`)."""
-    if _implemented():
-        return service.wallet_view(companyId)
-    return get_wallet_info(companyId=companyId)
+    return service.wallet_view(companyId)
 
 
 def get_holder_access(*, companyId: str, claims: dict | None = None) -> dict:
     """Query `getHolderAccess` (README 9.3), only for C4-M1. `claims` is set by the HTTP route; in the same
     process the audit entry holds the name of the calling module."""
-    if _implemented():
-        return service.holder_access(companyId, claims)
-    w = _wallet(companyId)
-    if not w["_holder"]:
-        raise Problem(MODULE, 409, "invalid-state", detail="no holder access for provider STUB")
-    return w["_holder"]
+    return service.holder_access(companyId, claims)
 
 
-# ------------------------------------------------------------------------------- wallet accounts
-# The wallet accounts (README 8.2, 8.3, 9.2) are implemented in accounts.py. It is imported when the
-# function is called, so that this file and accounts.py never import each other at load time. Without
-# accounts.py the stand-in answers.
-def _account_function(name: str):
-    accounts = service.optional_module("accounts")
-    if accounts is not None and hasattr(accounts, name):
-        return getattr(accounts, name)
-    return __getattr__(name)
-
-
+# ------------------------------------------------------------------- wallet accounts (README 8.2, 8.3, 9.2)
 def create_wallet_account(input: dict) -> dict:
     """Step `create-wallet-account` (README 8.2)."""
-    return _account_function("create_wallet_account")(input)
+    return accounts.create_wallet_account(input)
 
 
 def delete_wallet_account(input: dict) -> dict:
     """Step `delete-wallet-account` (README 8.3)."""
-    return _account_function("delete_wallet_account")(input)
+    return accounts.delete_wallet_account(input)
 
 
 def get_wallet_account_internal(*, technicalUserId: str) -> dict:
     """Query `getWalletAccountInternal` (README 9.2)."""
-    return _account_function("get_wallet_account_internal")(technicalUserId=technicalUserId)
+    return accounts.get_wallet_account_internal(technicalUserId=technicalUserId)
 
 
-__getattr__ = standin.missing_interface(MODULE)   # steps and queries not implemented yet: stand-in
+def view_wallet_account(technical_user_id: str, claims: dict) -> dict:
+    """`GET /technical-users/{technicalUserId}/wallet-account`."""
+    return accounts.view_wallet_account(technical_user_id, claims)
+
+
+def retrieve_credentials(technical_user_id: str, claims: dict) -> dict:
+    """`POST /technical-users/{technicalUserId}/wallet-account/credentials`."""
+    return accounts.retrieve_credentials(technical_user_id, claims)
+
+
+# ------------------------------------------------------------------------ SAP DIV callbacks (README 7.6)
+def accept_sap_div_wallet_callback(bpn: str, body: dict, claims: dict) -> None:
+    """The wallet callback of SAP DIV: only its callback client, then README 7.6 steps 1 to 6."""
+    service.authorize_sap_div_callback(claims)
+    service.accept_wallet_callback(bpn, body, claims)
+
+
+def accept_sap_div_account_created(external_id: str, body: dict, claims: dict) -> None:
+    """The technical-user callback of SAP DIV (README 7.6)."""
+    service.authorize_sap_div_callback(claims)
+    accounts.accept_account_created(external_id, body, claims)
+
+
+def accept_sap_div_account_deleted(external_id: str, claims: dict) -> None:
+    """The deletion callback of SAP DIV for a technical user (README 7.6)."""
+    service.authorize_sap_div_callback(claims)
+    accounts.accept_account_deleted(external_id, claims)
+
+
+__getattr__ = standin.missing_interface(MODULE)   # steps and queries of the spec not implemented here: stand-in

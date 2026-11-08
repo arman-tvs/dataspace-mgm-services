@@ -30,17 +30,16 @@ clock. `providers` and `accounts` (written by another person) are imported only 
 from __future__ import annotations
 
 import datetime as dt
-import importlib
 import logging
 import os
 import threading
 import uuid
-from types import ModuleType
 from typing import Any
 
-from portal_common import events, neighbours
+from portal_common import events
 
-from . import crypto, did, errors
+from . import crypto, did, errors, gateways, providers
+from .adapters.common import Callbacks
 from .store import InMemoryStore, WalletStore
 
 log = logging.getLogger(__name__)
@@ -48,6 +47,7 @@ log = logging.getLogger(__name__)
 MODULE = "c4-m2"
 PROVIDERS = ("SAP_DIV", "IDENTITY_HUB", "CSP")
 HOLDER_ACCESS, STS_ACCESS = "HOLDER_ACCESS", "STS_ACCESS"
+DEFAULT_CALLBACK_CLIENT = "sa-div-callback"
 
 _store: WalletStore | None = None
 _store_lock = threading.Lock()
@@ -55,7 +55,7 @@ _store_lock = threading.Lock()
 
 def now() -> dt.datetime:
     """The clock of the module: timezone-aware UTC. All time reads go through this function."""
-    return dt.datetime.now(dt.timezone.utc)
+    return dt.datetime.now(dt.UTC)
 
 
 def get_store() -> WalletStore:
@@ -67,21 +67,17 @@ def get_store() -> WalletStore:
         return _store
 
 
-def optional_module(name: str) -> ModuleType | None:
-    """`modules.c4_m2.<name>` if the file exists, else None; a broken import still raises."""
-    full = f"{__package__}.{name}"
-    try:
-        return importlib.import_module(full)
-    except ModuleNotFoundError as error:
-        if error.name == full:
-            return None
-        raise
-
-
 def reset() -> None:
     """Stop the timer and clear the store."""
     stop_timer()
     get_store().reset()
+
+
+def reset_all() -> None:
+    """`interface.reset()`: the store and the timer, the key cache, the state of the providers."""
+    reset()
+    crypto.reset()
+    providers.reset()
 
 
 def audit(claims: dict | str | None, operation: str, company_id: str | None, object_id: str | None) -> None:
@@ -120,7 +116,7 @@ def _when(value: Any) -> dt.datetime | None:
             return None
     if not isinstance(value, dt.datetime):
         return None
-    return value if value.tzinfo else value.replace(tzinfo=dt.timezone.utc)
+    return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
 
 
 def _iso(value: Any) -> str | None:
@@ -129,32 +125,19 @@ def _iso(value: Any) -> str | None:
 
 
 
-def providers_module() -> ModuleType | None:
-    """The providers file of C4-M2 if it exists (it is written by another person)."""
-    return optional_module("providers")
-
-
 def enabled_providers() -> list[str]:
     """README 4: `ENABLED_PROVIDERS`, empty = `SAP_DIV,IDENTITY_HUB,CSP`."""
-    providers = providers_module()
-    if providers is not None:
-        return list(providers.enabled())
-    names = [n.strip().upper() for n in os.environ.get("ENABLED_PROVIDERS", "").split(",") if n.strip()]
-    return names or list(PROVIDERS)
+    return list(providers.enabled())
 
 
 def default_provider() -> str:
     """README 4: `DEFAULT_PROVIDER`, empty = `CSP`."""
-    providers = providers_module()
-    if providers is not None:
-        return providers.default_provider()
-    return os.environ.get("DEFAULT_PROVIDER", "").strip().upper() or "CSP"
+    return providers.default_provider()
 
 
 def get_company(company_id: str) -> dict | None:
-    """The view of C3-M1 (`name`, `bpn`, `status`); None if the company does not exist. Any other failure
-    of the neighbour raises `Problem` (502), see `portal_common.neighbours`."""
-    return neighbours.query(MODULE, "c3-m1", "query_company", companyId=company_id)
+    """The view of C3-M1 (`name`, `bpn`, `status`); None if the company does not exist (gateways.py)."""
+    return gateways.company(company_id)
 
 
 def get_wallet(company_id: str) -> dict | None:
@@ -306,9 +289,6 @@ def _reset_for_new_attempt(wallet: dict, provider: str) -> dict:
 
 def _order(wallet: dict, company: dict) -> dict:
     """README 8.1 step 4: the order to the adapter. `provider_ordered_at` is set only after it accepted."""
-    providers = providers_module()
-    if providers is None:
-        raise errors.upstream_error("no provider adapter available")
     answer = providers.get(wallet["provider"]).order_wallet({
         "company_id": wallet["company_id"], "bpn": wallet["bpn"], "company_name": company.get("name"),
         "attempt": wallet["attempt"], "wallet_id": wallet["id"]})
@@ -414,6 +394,14 @@ def _sap_div_location(bpn: str, did_value: str) -> str | None:
     return f"{base}/{bpn}/did.json" if base else did_web_location(did_value)
 
 
+def authorize_sap_div_callback(claims: dict) -> None:
+    """README 7.6: only the callback client of SAP DIV (`SAP_DIV_CALLBACK_CLIENT_ID`) may call back (403,
+    nothing is audited). Token and permission are checked by the router before."""
+    client = os.environ.get("SAP_DIV_CALLBACK_CLIENT_ID", "").strip() or DEFAULT_CALLBACK_CLIENT
+    if claims.get("azp") != client:
+        raise errors.forbidden("the calling client is not the callback client of SAP DIV")
+
+
 def accept_wallet_callback(bpn: str, body: dict, claims: dict | str | None) -> None:
     """The wallet callback of SAP DIV (README 7.6 steps 1 to 6). Returns None (the route answers 204);
     raises `Problem` for 400, 404 and 409. Every accepted callback, also a duplicate, is audited."""
@@ -453,6 +441,20 @@ def accept_wallet_callback(bpn: str, body: dict, claims: dict | str | None) -> N
         audit(claims, "SUBMIT_WALLET_CALLBACK", wallet["company_id"], wallet["id"])
 
 
+def _account_created(reference: str, body: dict, caller: str) -> None:
+    from modules.c4_m2.services import accounts  # accounts imports this file: imported at call time
+    accounts.accept_account_created(reference, body, caller)
+
+
+def _account_deleted(reference: str, caller: str) -> None:
+    from modules.c4_m2.services import accounts
+    accounts.accept_account_deleted(reference, caller)
+
+
+providers.register_callbacks(Callbacks(wallet=accept_wallet_callback, account_created=_account_created,
+                                                 account_deleted=_account_deleted))
+
+
 # -------------------------------------------------------------------------- scheduled tasks
 def _timer_pass_requested(moment: dt.datetime) -> None:
     """README 6.10 callback deadline: `REQUESTED` with an order older than the deadline."""
@@ -487,9 +489,8 @@ def run_timer_once() -> None:
     moment = now()
     _timer_pass_requested(moment)
     _timer_pass_validating(now())
-    accounts = optional_module("accounts")
-    if accounts is not None and hasattr(accounts, "run_tasks"):
-        accounts.run_tasks()
+    from modules.c4_m2.services import accounts  # accounts imports this file: imported at call time
+    accounts.run_tasks()
 
 
 _timer: threading.Thread | None = None

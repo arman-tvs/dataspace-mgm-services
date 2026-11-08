@@ -33,10 +33,10 @@ import logging
 import os
 import threading
 import uuid
-from typing import Callable
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from cryptography.hazmat.primitives.asymmetric import ec
-
 
 MODULE = "c4-m2"
 log = logging.getLogger(__name__)
@@ -45,6 +45,29 @@ _lock = threading.RLock()
 _orders: list[dict] = []
 _documents: dict[str, dict] = {}
 _pending: list[dict] = []
+
+
+@dataclass(frozen=True, slots=True)
+class Callbacks:
+    """Where the built-in stand-ins deliver their callbacks (README 7.6): the handlers of the core."""
+    wallet: Callable[[str, dict, str], None]
+    account_created: Callable[[str, dict, str], None]
+    account_deleted: Callable[[str, str], None]
+
+
+_callbacks: Callbacks | None = None
+
+
+def register_callbacks(handlers: Callbacks) -> None:
+    """Set by the core (`service.py`) when it is loaded."""
+    global _callbacks
+    _callbacks = handlers
+
+
+def callbacks() -> Callbacks:
+    if _callbacks is None:
+        raise RuntimeError("the core of C4-M2 has not registered its callback handlers")
+    return _callbacks
 
 
 def number(name: str, default: float) -> float:

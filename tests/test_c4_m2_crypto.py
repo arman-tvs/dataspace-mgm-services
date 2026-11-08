@@ -43,8 +43,8 @@ needs_providers = pytest.mark.skipif(
     importlib.util.find_spec("modules.c4_m2.providers") is None,
     reason="not implemented yet: modules.c4_m2.providers (provider adapters)")
 needs_accounts = pytest.mark.skipif(
-    importlib.util.find_spec("modules.c4_m2.providers") is None or importlib.util.find_spec("modules.c4_m2.accounts") is None,
-    reason="not implemented yet: modules.c4_m2.accounts (wallet accounts)")
+    importlib.util.find_spec("modules.c4_m2.providers") is None or importlib.util.find_spec("modules.c4_m2.services.accounts") is None,
+    reason="not implemented yet: modules.c4_m2.services.accounts (wallet accounts)")
 
 
 @pytest.fixture

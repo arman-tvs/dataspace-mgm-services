@@ -34,13 +34,13 @@ import json
 import logging
 import os
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote
 
 import httpx
 
 from portal_common import http
 
-from . import service
+from . import providers
 
 log = logging.getLogger(__name__)
 RESOLVE_TIMEOUT_SECONDS = 10.0
@@ -52,17 +52,7 @@ _PROVIDERS_WITH_CREDENTIAL_SERVICE = {"IDENTITY_HUB", "CSP"}
 
 def _expected_did(provider: str, bpn: str) -> str | None:
     """The DID the provider must use for `bpn`, None if only the form `did:web:` is checked (CSP)."""
-    providers = service.optional_module("providers")
-    if providers is not None:
-        return providers.get(provider).did_for(bpn)
-    if provider == "SAP_DIV":
-        base = urlsplit(os.environ.get("SAP_DIV_DID_DOCUMENT_BASE_URL", ""))
-        location = (base.netloc + base.path).strip("/").replace("/", ":")
-        return f"did:web:{location}:{bpn}" if location else None
-    if provider == "IDENTITY_HUB":
-        base = os.environ.get("IDENTITYHUB_DID_BASE", "").strip().strip(":")
-        return f"did:web:{base}:{bpn}" if base else None
-    return None
+    return providers.get(provider).did_for(bpn)
 
 
 def check_form(provider: str, did: str, bpn: str) -> bool:
@@ -139,9 +129,6 @@ def _from_test_directory(did: str) -> dict | None:
 
 
 def _from_stand_in_providers(did: str) -> dict | None:
-    providers = service.optional_module("providers")
-    if providers is None:
-        return None
     documents = providers.stand_in_documents()
     if did in documents:
         return documents[did]

@@ -39,11 +39,8 @@ import os
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Body, Response
-
-from portal_common import events, problems, standin
-
-from . import crypto, errors, providers, service
+from modules.c4_m2 import crypto, errors, providers, service
+from portal_common import events
 
 MODULE = "c4-m2"
 REQUESTED, ACTIVE, FAILED, DELETING, DELETED = "REQUESTED", "ACTIVE", "FAILED", "DELETING", "DELETED"
@@ -69,7 +66,7 @@ def _aware(value: Any) -> dt.datetime | None:
             return None
     if not isinstance(value, dt.datetime):
         return None
-    return value if value.tzinfo else value.replace(tzinfo=dt.timezone.utc)
+    return value if value.tzinfo else value.replace(tzinfo=dt.UTC)
 
 
 def _iso(value: Any) -> str | None:
@@ -422,41 +419,3 @@ def run_tasks() -> None:
     """The account part of the scheduled tasks; `service.run_timer_once()` calls it."""
     _task_callback_deadline(service.now())
     _task_credentials_retention(service.now())
-
-
-# ----------------------------------------------------------------------------------------- routes
-# No prefix: `router.py` of the core includes this router under `/api/c4-m2`.
-router = APIRouter(route_class=problems.route_class(MODULE))
-
-
-@router.post("/steps/create-wallet-account")
-def step_create_wallet_account(body: dict = Body(...),
-                               _: dict = standin.perm(MODULE, "POST", "/steps/create-wallet-account")):
-    return create_wallet_account(body)
-
-
-@router.post("/steps/delete-wallet-account")
-def step_delete_wallet_account(body: dict = Body(...),
-                               _: dict = standin.perm(MODULE, "POST", "/steps/delete-wallet-account")):
-    return delete_wallet_account(body)
-
-
-@router.get("/technical-users/{technicalUserId}/wallet-account")
-def get_wallet_account(technicalUserId: str,
-                       claims: dict = standin.perm(MODULE, "GET", "/technical-users/{technicalUserId}/wallet-account")):
-    return view_wallet_account(technicalUserId, claims)
-
-
-@router.post("/technical-users/{technicalUserId}/wallet-account/credentials")
-def post_wallet_account_credentials(
-        technicalUserId: str, response: Response,
-        claims: dict = standin.perm(MODULE, "POST", "/technical-users/{technicalUserId}/wallet-account/credentials")):
-    response.headers["Cache-Control"] = "no-store"
-    return retrieve_credentials(technicalUserId, claims)
-
-
-@router.get("/internal/technical-users/{technicalUserId}/wallet-account")
-def get_wallet_account_internal_route(
-        technicalUserId: str,
-        _: dict = standin.perm(MODULE, "GET", "/internal/technical-users/{technicalUserId}/wallet-account")):
-    return get_wallet_account_internal(technicalUserId=technicalUserId)

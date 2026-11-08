@@ -35,10 +35,9 @@ import os
 import threading
 import uuid
 
+from modules.c4_m2 import errors
+from modules.c4_m2.adapters import common
 from portal_common import csp
-
-from . import errors
-from . import providers_common as common
 
 PROVIDER = "CSP"
 STANDIN_HOST = "csp-wallet.example.org"
@@ -120,9 +119,6 @@ class CspAdapter:
 
     def did_for(self, bpn: str) -> None:
         """README 6.4 step 1: the CSP decides host and path, only the form `did:web:` is checked."""
-        return None
-
-    def callback_router(self):
         return None
 
     def _call(self, method: str, path: str, body: dict | None = None) -> tuple[int, dict | None]:
