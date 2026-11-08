@@ -68,6 +68,9 @@ and 7a first. Do not change code during the review. Report what you find.
     hints on every function; names that say what a thing is; no duplicated logic (the same mapping
     or check written twice); comments that explain why, with the spec section. The gate counts the
     first three; judge the rest by reading.
+19. **Cases of ADR-0003 section 5:** every file has a layer name; webhooks are routes; adapters do not
+    import the service (a callback port instead); no `Any` inside types either (`dict[str, Any]`);
+    tests do not reach into internals.
 
 ## Output
 

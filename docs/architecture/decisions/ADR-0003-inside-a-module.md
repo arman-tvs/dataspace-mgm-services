@@ -116,9 +116,30 @@ configuration of README section 4 in `reset()`, never by `if provider == ...`.
 ### 4. Limits (balanced)
 
 At most 500 lines per file, 60 lines and a complexity of 10 per function; type hints on every function (mypy); ruff
-rules `E, F, W, I, B, UP, C90, SIM` with a line length of 120.
+rules `E, F, W, I, B, UP, C90, SIM` and `ANN401` with a line length of 120.
 
-### 5. Enforcement: one gate for everyone
+### 5. Cases found while testing on five modules
+
+The rules above were tested by refactoring C3-M2, C3-M1, C2-M3, C4-M2 and C1-M2 (branches in a fork, no behaviour
+change). These cases came up; they are part of the decision:
+
+| Case | Rule |
+|---|---|
+| A webhook of an external system (C4-M2 SAP DIV callbacks) | It is a route: in `router.py`, calling `interface` or the service. The adapter may parse the external format, but does not own a FastAPI router. |
+| A built-in stand-in that calls back into the module (C4-M2) | The adapter may not import the service. The service registers its callbacks in the adapter (a small `Callbacks` dataclass passed to `register_callbacks(...)` in `reset()` or at import): a callback port. |
+| A module with only an in-memory store (C1-M2) | `store.py` holds the module's data as plain module state until a second implementation exists; a `Protocol` with one implementation is ceremony. It is still the only file that holds data. |
+| Validating a token or document of an external system (C1-M2, C3-M1 `attestation.py`; C4-M2 `did.py`) | An adapter: it talks to an external system (JWKS, DID resolution). Put it in `adapters/`. |
+| Selecting one of several adapters by configuration (C4-M2 `providers.py`) | The registry lives in `adapters/__init__.py` (`get(name)`, `enabled()`), not in a separate top-level file. |
+| `service.py` and `services/` side by side (C4-M2) | One of them: a module that outgrows `service.py` moves it into `services/`. Tests that patch `service.x` move with it. |
+| A file whose name has no layer (`calls.py`, `crypto.py`, `iam/`) | Rename it to its layer (`gateways.py`, `adapters/crypto.py`, `adapters/iam/`) so the layer rules apply. The gate does not flag files without a layer yet. |
+| Parameters a function accepts and ignores (C2-M3 queries; the call convention passes every openapi parameter) | `**_other: object` is fine: `object` for "accepted, not used". |
+| A FastAPI dependency helper (C2-M3 `dependencies.perm`, FastAPI types `Depends()` as `Any`) | Type it with what the handler receives (for example `-> dict` for the claims) and say so in the docstring; no `# noqa`. |
+| `Any` inside a type (`dict[str, Any]`, `Callable[..., Any]`) | Counts as `Any`: inside a module use `dict[str, object]`, a `TypedDict` or a dataclass. `ANN401` only catches a bare `Any`; review checks the rest. |
+| A local list of field errors called `errors` (C3-M1, C1-M2) | Call it `invalid`: `errors` is the module of error factories. Shared helpers get names that do not collide with common locals (`now_iso`, `paged`, not `now`, `page`). |
+| Tests that reach into internals (`service.now`, `interface.store`, `find_spec("...accounts")`) | Tests use `interface.py`, the router, the store's functions and the patch points the module documents; then a refactor changes no test. A moved string (C4-M2 audit operation names) needs a test that pins it. |
+| Line length in existing code of another team (C1-M2) | Wrap by hand only the lines a change touches; a repository-wide `ruff format` commit is a separate decision (issue). |
+
+### 6. Enforcement: one gate for everyone
 
 `tools/quality/gate.py` checks ruff, mypy, the limits, the layers (`layers`, `neighbours`, `problems`) and
 `module-map` per area. Existing findings are frozen in `tools/quality/baseline.json`; the gate fails when a count goes
@@ -149,6 +170,9 @@ up, and `--update-baseline` only lowers. It runs:
   to the layout; C3-M2 to the data and error conventions.
 - `develop` must be green before the gate becomes a required check (2 failing tests, `demo.py` stops in C2-M2).
 - Moving to full hexagonal later stays possible: layers that only import downward can be turned into ports.
+- Tested before the decision on five modules, all with unchanged module tests, full suite and `demo.py`: C3-M2
+  6 -> 0, C2-M3 76 -> 0, C4-M2 69 -> 0, C1-M2 130 -> 24, C3-M1 174 -> 47 findings; what is left is mainly router return
+  types, which need Pydantic response models in `schemas.py`.
 
 ## NOTICE
 

@@ -119,6 +119,10 @@ The spec defines the outside of a module; the inside follows
 - Limits: at most 500 lines per file, 60 lines and a complexity of 10 per function, type hints on every function.
 - In `interface.py` write each step and query as a one-line `def` that calls the service; do not re-export with
   `from .service import ...` (`module-map` counts only functions defined with `def`).
+- Every file has a layer name (`gateways.py`, not `calls.py`; token validation and DID resolution in `adapters/`);
+  webhooks of external systems are routes in `router.py`; a stand-in adapter calls back through a registered port,
+  never by importing the service. More cases: ADR-0003 section 5.
+- Tests use `interface.py`, the router and the store's functions, not internals, so a refactor changes no test.
 - In a subpackage (`services/`, `adapters/`) import the module's own files absolutely, `from modules.<id> import
   store`, not `from .. import store` (`tests/test_interfaces.py` reads that as a foreign module).
 - Examples in the code base: C2-M3 for the layers, C3-M2 for dataclasses and `errors.py`, C4-M2 for adapters.
