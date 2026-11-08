@@ -30,7 +30,7 @@ from pathlib import PurePosixPath
 
 import pytest
 
-from tools.quality import checks, gate, layers
+from tools.quality import checks, gate, http_layer, layers
 from tools.quality.checks import Finding
 
 
@@ -140,3 +140,37 @@ def test_hook_ignores_files_outside_the_checked_areas(monkeypatch):
 def test_the_repository_passes_its_own_gate():
     """The committed baseline matches the code: every pull request starts green and can only stay so."""
     assert gate.main([]) == 0
+
+
+# ---------------------------------------------------------------- HTTP layer (FastAPI, ADR-0003)
+def http_findings(source: str) -> list[tuple[str, str]]:
+    return [(f.check, f.message) for f in http_layer.check_router(PurePosixPath("modules/c9_m9/router.py"), source)]
+
+
+def test_a_route_without_operation_id_response_model_and_typed_body_is_flagged():
+    source = ("@router.post('/steps/x')\n"
+              "def x(body: dict = Body(...)) -> dict:\n"
+              "    return {}\n")
+    assert http_findings(source) == [
+        ("http-body", "x: body `body` is a dict, not a schemas.py model"),
+        ("http-route", "x: no operation_id (the spec's operationId)"),
+        ("http-route", "x: no response model")]
+
+
+def test_a_route_with_model_body_operation_id_and_precise_return_is_fine():
+    assert http_findings("@router.post('/steps/x', operation_id='stepX')\n"
+                         "def x(body: StepX) -> StepReply:\n    return {}\n") == []
+    assert http_findings("@router.get('/x', operation_id='getX', response_model=X)\n"
+                         "def x() -> dict:\n    return {}\n") == []
+    assert http_findings("@router.delete('/x', operation_id='deleteX', status_code=204)\n"
+                         "def x() -> None:\n    return None\n") == []
+    assert http_findings("@router.get('/x', operation_id='getX')\n"
+                         "def x() -> dict[str, Any]:\n    return {}\n") == [("http-route", "x: no response model")]
+
+
+def test_the_contract_of_c3_m2_matches_its_spec_and_c3_m1_shows_the_gaps():
+    """C3-M2 is built with schemas.py and operation ids; C3-M1 (develop) takes dict bodies without operation ids."""
+    assert http_layer.check_contract("c3-m2") == []
+    gaps = [f.message for f in http_layer.check_contract("c3-m1")]
+    assert any("PATCH /companies/{companyId}: operationId" in m and "'updateCompany'" in m for m in gaps)
+    assert any(m.startswith("PATCH /companies/{companyId}: request body untyped") for m in gaps)

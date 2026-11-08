@@ -20,6 +20,8 @@
       "ruff": 4
     },
     "modules/c11_m1": {
+      "contract": 10,
+      "http-route": 11,
       "layers": 1,
       "mypy": 16,
       "neighbours": 1,
@@ -34,13 +36,19 @@
       "ruff": 7
     },
     "modules/c1_m2": {
+      "contract": 50,
       "file-size": 1,
+      "http-body": 7,
+      "http-route": 47,
       "mypy": 45,
       "neighbours": 1,
       "problems": 44,
       "ruff": 39
     },
     "modules/c1_m3": {
+      "contract": 16,
+      "http-body": 2,
+      "http-route": 14,
       "mypy": 11,
       "neighbours": 1,
       "problems": 19,
@@ -49,6 +57,7 @@
     "modules/c2_m2": {
       "file-size": 1,
       "function-size": 1,
+      "http-route": 2,
       "module-map": 1,
       "mypy": 76,
       "neighbours": 1,
@@ -56,14 +65,20 @@
       "ruff": 41
     },
     "modules/c2_m3": {
+      "contract": 45,
+      "http-body": 3,
+      "http-route": 23,
       "layers": 2,
       "mypy": 31,
       "problems": 20,
       "ruff": 23
     },
     "modules/c3_m1": {
+      "contract": 69,
       "file-size": 2,
       "function-size": 3,
+      "http-body": 14,
+      "http-route": 56,
       "layers": 1,
       "module-map": 1,
       "mypy": 72,
@@ -77,6 +92,9 @@
       "ruff": 3
     },
     "modules/c4_m1": {
+      "contract": 17,
+      "http-body": 4,
+      "http-route": 13,
       "layers": 1,
       "mypy": 31,
       "neighbours": 2,
@@ -84,7 +102,10 @@
       "ruff": 6
     },
     "modules/c4_m2": {
+      "contract": 25,
       "file-size": 1,
+      "http-body": 5,
+      "http-route": 24,
       "layers": 2,
       "mypy": 26,
       "neighbours": 2,
@@ -92,6 +113,9 @@
       "ruff": 27
     },
     "modules/c6_m1": {
+      "contract": 22,
+      "http-body": 5,
+      "http-route": 17,
       "layers": 2,
       "mypy": 19,
       "neighbours": 1,

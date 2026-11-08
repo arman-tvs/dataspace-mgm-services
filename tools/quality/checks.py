@@ -33,6 +33,7 @@
 | `function-size` | syntax tree | a function has at most `FUNCTION_LINES` lines |
 | `layers`, `neighbours`, `problems` | `layers.py` | the layers inside a module (ADR-0003) |
 | `module-map` | `module-map` skill | call convention, routes and configuration names against the spec |
+| `http-body`, `http-route`, `contract` | `http_layer.py` | FastAPI: typed bodies and responses, spec operationIds |
 """
 from __future__ import annotations
 
@@ -47,7 +48,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import ModuleType
 
-from tools.quality import layers
+from tools.quality import http_layer, layers
 
 ROOT = Path(__file__).resolve().parents[2]
 FILE_LINES = 500
@@ -194,5 +195,28 @@ def module_map(areas: list[str]) -> list[Finding]:
     return findings
 
 
+def _team_module(package: str) -> bool:
+    router = ROOT / "modules" / package / "router.py"
+    text = router.read_text(encoding="utf-8") if router.is_file() else ""
+    return bool(text) and "STANDIN = True" not in text and "PROVIDED = True" not in text
+
+
+def http_findings(areas: list[str]) -> list[Finding]:
+    """FastAPI conventions and the contract against the spec, for team modules only (ADR-0003)."""
+    findings: list[Finding] = []
+    for area in areas:
+        package = area.removeprefix("modules/")
+        if not area.startswith("modules/") or not _team_module(package):
+            continue
+        for path in python_files([area]):
+            source = (ROOT / path).read_text(encoding="utf-8")
+            if "@" in source and "router" in source:
+                findings += [Finding(area, f.check, f"{path}:{f.line}", f.message)
+                             for f in http_layer.check_router(path, source)]
+        contract = http_layer.check_contract(package.replace("_", "-"))
+        findings += [Finding(area, f.check, area, f.message) for f in contract]
+    return findings
+
+
 def collect(areas: list[str]) -> list[Finding]:
-    return [*ruff(areas), *mypy(areas), *sizes_and_layers(areas), *module_map(areas)]
+    return [*ruff(areas), *mypy(areas), *sizes_and_layers(areas), *module_map(areas), *http_findings(areas)]
