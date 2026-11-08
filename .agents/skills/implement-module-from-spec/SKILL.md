@@ -58,7 +58,9 @@ Before you write code, list the files of the module and the job of each, followi
 | `adapters/` | one `Protocol` and implementations per external system of section 11 (only if there are any) |
 | `errors.py` | one factory per error type of section 12 |
 
-Keep files under 500 lines and functions under 60 lines and a complexity of 10. Look at C2-M3
+Keep files under 500 lines and functions under 60 lines and a complexity of 10. Type every function
+precisely: JSON becomes typed data at the edge (`schemas.py`, gateways); never `Any` in a signature,
+`object` only where unknown input is checked. Look at C2-M3
 (layers), C3-M2 (dataclasses, `errors.py`) and C4-M2 (adapters) for examples.
 
 ## 4. Implement

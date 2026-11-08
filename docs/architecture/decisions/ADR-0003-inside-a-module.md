@@ -64,6 +64,18 @@ systems (Keycloak, wallet providers, the CSP). Neighbour modules and events need
 camelCase names of the spec appear only at the edges (schemas, interface, gateways). Modules that pass `dict`s today
 may move in two steps: `dict` -> `TypedDict` (mypy checks the keys, no runtime change) -> dataclass.
 
+**Types: parse at the edge, precise types inside.** Unknown data becomes typed data once, where it enters the module,
+and every function after that has precise types:
+
+| Place | Type of a parameter or return value |
+|---|---|
+| `schemas.py` | Pydantic models from `openapi.yaml`: unknown JSON becomes typed data here |
+| `interface.py` | `dict` in and out (call convention), checked once at the start of each step |
+| `gateways.py`, `adapters/` | the answer of a neighbour or external system becomes a dataclass or `TypedDict` here |
+| service, store, validation, errors | precise types only: `str`, `int`, dataclasses, `TypedDict`s, `Literal` / `StrEnum`; an extra field of a `Problem` is a named parameter, not `**ext` |
+| `object` | only for a function whose job is to check unknown input (`def required(input: dict[str, object], field: str) -> str`); the check narrows it right there |
+| `Any` | never in a function signature (ruff `ANN401` in the gate): it switches type checking off |
+
 ### 3. Building blocks
 
 **Repository with a Protocol** (`store.py`, as C2-M3 `repository.py`, C4-M2 `store.py`): chosen in `reset()`,

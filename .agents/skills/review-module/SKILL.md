@@ -61,7 +61,9 @@ and 7a first. Do not change code during the review. Report what you find.
     external systems in `adapters/` behind a `Protocol`, every `Problem` built in `errors.py`.
     Imports point down only; service and store import no `fastapi` or `pydantic`.
 17. **Data:** dataclasses inside, Pydantic only in `schemas.py`, `dict` only at `interface.py`;
-    camelCase only at the edges. No `dict[str, Any]` passed between service and store.
+    camelCase only at the edges. No `dict[str, Any]` passed between service and store. Types are
+    precise inside the module: no `Any` in a signature (the gate checks it), `object` only in a
+    function that checks unknown input; `**ext` on error factories replaced by named parameters.
 18. **Readability:** files under 500 lines, functions under 60 lines and a complexity of 10, type
     hints on every function; names that say what a thing is; no duplicated logic (the same mapping
     or check written twice); comments that explain why, with the spec section. The gate counts the

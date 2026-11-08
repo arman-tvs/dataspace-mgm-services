@@ -113,6 +113,8 @@ The spec defines the outside of a module; the inside follows
 | `errors.py` | one factory per error type of README section 12; the only file that builds `Problem(...)` | other layers |
 
 - Data: dataclasses inside, Pydantic only in `schemas.py`, `dict` only at `interface.py`; camelCase only at the edges.
+- Types: parse at the edge, precise types inside. Never `Any` in a signature (the gate rejects it); `object` only for
+  a function that checks unknown input and narrows it right there.
   A module that passes `dict`s may go `dict` -> `TypedDict` -> dataclass step by step.
 - Limits: at most 500 lines per file, 60 lines and a complexity of 10 per function, type hints on every function.
 - In `interface.py` write each step and query as a one-line `def` that calls the service; do not re-export with
