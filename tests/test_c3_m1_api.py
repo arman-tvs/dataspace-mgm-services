@@ -213,3 +213,32 @@ def test_swagger_tags_c3_m1_as_implemented_not_as_stand_in():
     app.include_router(c3_router.router)
     tags = {tag for op in app.openapi()["paths"].values() for spec in op.values() for tag in spec["tags"]}
     assert tags == {"c3-m1 Company Profile"}
+
+
+# ---------------------------------------------------------------- HTTP contract (ADR-0003 "HTTP layer (FastAPI)")
+def test_a_step_without_process_and_step_run_is_400_validation_not_retryable(client, active):
+    """StepRequest requires processId and stepRunId (openapi.yaml); FastAPI checks them before the step runs."""
+    response = call(client, "POST", "/api/c3-m1/steps/reject-company", "svc", json={"companyId": U1})
+    body = response.json()
+    assert response.status_code == 400 and body["type"] == "urn:c3-m1:problem:validation"
+    assert {e["field"] for e in body["errors"]} == {"body.processId", "body.stepRunId"}
+    assert body["retryable"] is False
+
+
+def test_an_identifier_search_without_identifiers_is_400_validation(client, active):
+    """IdentifierMatchQuery requires identifiers; before the request model this was a 500 (TypeError)."""
+    response = call(client, "POST", "/api/c3-m1/internal/companies/identifier-matches", "svc", json={})
+    assert response.status_code == 400 and response.json()["type"] == "urn:c3-m1:problem:validation"
+    assert [e["field"] for e in response.json()["errors"]] == ["body.identifiers"]
+
+
+def test_swagger_shows_the_operation_ids_and_models_of_the_spec():
+    app = FastAPI()
+    app.include_router(c3_router.router)
+    doc = app.openapi()
+    patch = doc["paths"]["/api/c3-m1/companies/{companyId}"]["patch"]
+    assert patch["operationId"] == "updateCompany"
+    assert patch["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/CompanyUpdate")
+    assert patch["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/Company")
+    step = doc["components"]["schemas"]["StepCompanyApplication"]
+    assert set(step["required"]) == {"processId", "stepRunId", "companyId", "applicationId"}

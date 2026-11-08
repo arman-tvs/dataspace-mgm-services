@@ -74,14 +74,14 @@
       "ruff": 23
     },
     "modules/c3_m1": {
-      "contract": 69,
+      "contract": 0,
       "file-size": 1,
       "function-size": 0,
-      "http-body": 14,
-      "http-route": 56,
+      "http-body": 0,
+      "http-route": 0,
       "layers": 0,
       "module-map": 1,
-      "mypy": 45,
+      "mypy": 17,
       "neighbours": 0,
       "problems": 0,
       "ruff": 0

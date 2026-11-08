@@ -169,8 +169,9 @@ def test_a_route_with_model_body_operation_id_and_precise_return_is_fine():
 
 
 def test_the_contract_of_c3_m2_matches_its_spec_and_c6_m1_shows_the_gaps():
-    """C3-M2 is built with schemas.py and operation ids; C6-M1 takes dict bodies without operation ids."""
+    """C3-M2 and C3-M1 are built with schemas.py and operation ids; C6-M1 takes dict bodies without operation ids."""
     assert http_layer.check_contract("c3-m2") == []
+    assert http_layer.check_contract("c3-m1") == []
     gaps = [f.message for f in http_layer.check_contract("c6-m1")]
     assert any("POST /connectors: operationId" in m and "'registerConnector'" in m for m in gaps)
     assert any(m.startswith("POST /connectors: request body untyped") for m in gaps)
