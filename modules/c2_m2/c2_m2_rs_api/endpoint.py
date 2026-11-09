@@ -26,12 +26,14 @@
 from __future__ import annotations
 
 from abc import ABC
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, TypeVar
 
 from fastapi import Body, Path, Query
 
 ENDPOINT_ATTRIBUTE = "__c2_m2_endpoint__"
+Method = TypeVar("Method", bound=Callable[..., object])   # a decorated interface method keeps its type
 
 
 @dataclass(frozen=True)
@@ -45,22 +47,22 @@ class EndpointRouter:
     `create_router` registers the routes later, bound to an implementation. Everything else about the
     operation (operationId, permission, scope, schemas) comes from the contract YAML."""
 
-    def _record(self, method: str, path: str):
-        def decorate(function):
+    def _record(self, method: str, path: str) -> Callable[[Method], Method]:
+        def decorate(function: Method) -> Method:
             setattr(function, ENDPOINT_ATTRIBUTE, Endpoint(method, path))
             return function
         return decorate
 
-    def get(self, path: str):
+    def get(self, path: str) -> Callable[[Method], Method]:
         return self._record("GET", path)
 
-    def post(self, path: str):
+    def post(self, path: str) -> Callable[[Method], Method]:
         return self._record("POST", path)
 
-    def put(self, path: str):
+    def put(self, path: str) -> Callable[[Method], Method]:
         return self._record("PUT", path)
 
-    def delete(self, path: str):
+    def delete(self, path: str) -> Callable[[Method], Method]:
         return self._record("DELETE", path)
 
 
