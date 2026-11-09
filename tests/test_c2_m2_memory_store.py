@@ -30,6 +30,7 @@ import datetime as dt
 import pytest
 
 from modules.c2_m2 import module
+from modules.c2_m2.c2_m2_api.exception import LastCompanyAdminException
 from modules.c2_m2.c2_m2_api.model.constants import (
     BindingStatus,
     InstanceClientStatus,
@@ -40,6 +41,7 @@ from modules.c2_m2.c2_m2_api.model.constants import (
 from modules.c2_m2.c2_m2_impl.dao.impl import memory_dao_service
 from modules.c2_m2.c2_m2_impl.dao.impl.memory_store import MemoryStore
 from modules.c2_m2.c2_m2_impl.internal.model import AppInstanceClient, Company, CompanyUser, Invitation
+from portal_common.problems import Problem
 
 COMPANY = "c0000001-0000-4000-8000-000000000001"
 OTHER = "c0000002-0000-4000-8000-000000000002"
@@ -78,6 +80,19 @@ def test_a_failing_transaction_is_rolled_back_but_the_client_number_is_not():
         raise RuntimeError("the IAM call failed")
     assert dao.companies.get(COMPANY) is None
     assert dao.instance_clients.next_client_number() == first + 2      # a sequence, as in PostgreSQL
+
+
+def test_a_business_error_keeps_the_writes_as_postgres_commits_then():
+    """PostgresDatabase.transaction commits on C2M2BaseException and Problem and re-raises; the memory store too."""
+    dao = memory_dao_service()
+    with pytest.raises(LastCompanyAdminException), dao.lock(("company", COMPANY)):
+        dao.companies.save(Company(COMPANY, None))
+        raise LastCompanyAdminException("the company keeps at least one Company Admin")
+    assert dao.companies.get(COMPANY) is not None
+    with pytest.raises(Problem), dao.lock(("company", OTHER)):
+        dao.companies.save(Company(OTHER, None))
+        raise Problem("c2-m2", 409, "conflict")
+    assert dao.companies.get(OTHER) is not None
 
 
 def test_nested_transactions_join_the_outer_one():
