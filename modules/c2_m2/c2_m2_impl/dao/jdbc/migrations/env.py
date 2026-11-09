@@ -25,6 +25,10 @@
 """Alembic environment of the database c2_m2: the connection of `PostgresDatabase.migrate`, or DATABASE_URL (CLI)."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import URL, Connection
 import os
 
 from alembic import context
@@ -35,7 +39,7 @@ from modules.c2_m2.c2_m2_impl.impl.postgres_database import VERSION_TABLE, sqlal
 MIGRATION_LOCK = "SELECT pg_advisory_xact_lock(hashtextextended('c2_m2:migrations', 0))"
 
 
-def _url():
+def _url() -> URL:
     return sqlalchemy_url(os.environ.get("DATABASE_URL") or "")
 
 
@@ -45,7 +49,7 @@ def run_offline() -> None:
         context.run_migrations()
 
 
-def _run(connection) -> None:
+def _run(connection: Connection) -> None:
     # one transaction for all pending migrations; the lock keeps replicas that start at once apart
     connection.exec_driver_sql(MIGRATION_LOCK)
     context.configure(connection=connection, version_table=VERSION_TABLE)

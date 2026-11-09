@@ -24,6 +24,11 @@
 #################################################################################
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import URL
+    from sqlalchemy.orm import Session
 import contextlib
 import contextvars
 from collections.abc import Iterator, Sequence
@@ -36,7 +41,7 @@ from portal_common.problems import Problem
 VERSION_TABLE = "alembic_version_c2_m2"
 
 
-def sqlalchemy_url(url: str):
+def sqlalchemy_url(url: str) -> URL:
     """`postgresql://…` of DATABASE_URL as SQLAlchemy URL with the pg8000 driver."""
     from sqlalchemy.engine import make_url
     parsed = make_url(url)
@@ -54,7 +59,8 @@ class PostgresDatabase(Database):
         from sqlalchemy.orm import sessionmaker
         self.engine = create_engine(sqlalchemy_url(url), pool_pre_ping=True)
         self._sessions = sessionmaker(self.engine)
-        self._current = contextvars.ContextVar(f"c2_m2_session_{id(self)}", default=None)
+        self._current: contextvars.ContextVar[Session | None] = contextvars.ContextVar(
+            f"c2_m2_session_{id(self)}", default=None)
 
     @contextlib.contextmanager
     def transaction(self) -> Iterator[None]:
@@ -78,9 +84,16 @@ class PostgresDatabase(Database):
             finally:
                 self._current.reset(token)
 
+    def _session(self) -> Session:
+        """The session of the open transaction."""
+        session = self._current.get()
+        if session is None:
+            raise RuntimeError("no open transaction")
+        return session
+
     def query(self, sql: str, params: Sequence = ()) -> list[dict]:
         with self.transaction():
-            result = self._current.get().connection().exec_driver_sql(sql, tuple(params) or None)
+            result = self._session().connection().exec_driver_sql(sql, tuple(params) or None)
             return [dict(row) for row in result.mappings()] if result.returns_rows else []
 
     @contextlib.contextmanager

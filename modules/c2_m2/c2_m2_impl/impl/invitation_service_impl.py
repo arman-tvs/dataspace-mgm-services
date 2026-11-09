@@ -51,6 +51,7 @@ from modules.c2_m2.c2_m2_api.model.constants import (
     JoinedVia,
 )
 from modules.c2_m2.c2_m2_api.service import InvitationService
+from modules.c2_m2.c2_m2_impl.config import Config
 from modules.c2_m2.c2_m2_impl.config.properties import as_bool, as_int, as_list
 from modules.c2_m2.c2_m2_impl.context import Context, paginate, statuses
 from modules.c2_m2.c2_m2_impl.dao import DaoService
@@ -67,7 +68,7 @@ class InvitationServiceImpl(InvitationService):
         self.users = users
 
     @property
-    def cfg(self):
+    def cfg(self) -> Config:
         return self.ctx.config
 
     @property
