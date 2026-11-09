@@ -26,8 +26,8 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Iterator
-
-from modules.c2_m2.c2_m2_impl.internal.services import Database
+from contextlib import AbstractContextManager
+from typing import Protocol
 
 from .app_client_template_dao import AppClientTemplateDao
 from .app_instance_client_dao import AppInstanceClientDao
@@ -38,6 +38,13 @@ from .invitation_dao import InvitationDao
 from .role_assignment_log_dao import RoleAssignmentLogDao
 
 
+class Transactional(Protocol):
+    """What the DAO service needs of the store: one transaction for the locks of 6.14. The PostgreSQL `Database`
+    and the in-memory `MemoryStore` both provide it."""
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+
+
 class DaoService:
     """The one way of the service implementations to the database `c2_m2`: every DAO, and the locks of 6.14
     taken through the DAOs in the fixed order app, company, staff, invitation, account."""
@@ -45,7 +52,7 @@ class DaoService:
     ORDER = ("app", "company", "staff", "invitation", "account")
     STAFF = ("staff", "all")
 
-    def __init__(self, db: Database, templates: AppClientTemplateDao, instance_clients: AppInstanceClientDao,
+    def __init__(self, db: Transactional, templates: AppClientTemplateDao, instance_clients: AppInstanceClientDao,
                  companies: CompanyDao, company_users: CompanyUserDao, invitations: InvitationDao,
                  audit_log: AuditLogDao, role_log: RoleAssignmentLogDao) -> None:
         self.db = db
