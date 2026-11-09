@@ -33,6 +33,7 @@ from __future__ import annotations
 import inspect
 import typing
 from collections.abc import Callable, Iterable
+from enum import Enum
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -43,7 +44,7 @@ from portal_common import tokens
 
 from .apis import PRIVATE_APIS, PUBLIC_APIS
 from .c2_m2_route import C2M2Route
-from .contract import load_contract, operations, resolve
+from .contract import Json, load_contract, operations, resolve_object
 from .endpoint import AUTHENTICATED, Endpoint, RestApi
 
 # Declares the bearer scheme for Swagger; the token itself is checked per operation (AUTHENTICATED).
@@ -72,8 +73,10 @@ def _assign(implementations: Iterable[RestApi], interfaces: tuple[type[RestApi],
     return assigned
 
 
-def _authenticated(annotation) -> bool:
-    return typing.get_origin(annotation) is typing.Annotated and AUTHENTICATED in annotation.__metadata__
+def _authenticated(annotation: object) -> bool:
+    """True for the `Claims` annotation (`Annotated[..., AUTHENTICATED]`) of an endpoint parameter."""
+    return (typing.get_origin(annotation) is typing.Annotated
+            and AUTHENTICATED in getattr(annotation, "__metadata__", ()))
 
 
 def _endpoint_function(declaration: Callable, implementation: RestApi, endpoint: Endpoint) -> Callable:
@@ -94,15 +97,38 @@ def _endpoint_function(declaration: Callable, implementation: RestApi, endpoint:
         raise TypeError(f"{type(implementation).__name__}.{declaration.__name__} does not accept the "
                         f"parameters of the interface: {e}") from e
 
-    def call(**kwargs):
+    def call(**kwargs: object) -> object:
         return target(**kwargs)
 
-    call.__signature__ = inspect.Signature(parameters)
+    call.__dict__["__signature__"] = inspect.Signature(parameters)   # what FastAPI reads for the parameters
     call.__name__ = declaration.__name__
     call.__qualname__ = f"{type(implementation).__name__}.{declaration.__name__}"
     call.__doc__ = declaration.__doc__
     call.__dict__["implementation"] = target   # lets tests and tools find the bound implementation
     return call
+
+
+def _text(operation: dict[str, Json], key: str, *, required: bool = False) -> str | None:
+    """A text field of a contract operation; a required one that is missing is a contract error."""
+    value = operation.get(key)
+    if isinstance(value, str):
+        return value
+    if required:
+        raise LookupError(f"contract operation without {key}")
+    return None
+
+
+def _tags(operation: dict[str, Json]) -> list[str | Enum] | None:
+    tags = operation.get("tags")
+    return [str(tag) for tag in tags] if isinstance(tags, list) else None
+
+
+def _success_status(operation: dict[str, Json]) -> int:
+    """The 2xx status of a contract operation (`responses`)."""
+    responses = operation.get("responses")
+    if not isinstance(responses, dict):
+        raise LookupError("contract operation without responses")
+    return next(int(code) for code in responses if code.startswith("2"))
 
 
 def create_router(implementations: Iterable[RestApi], *, public: bool) -> APIRouter:
@@ -112,7 +138,7 @@ def create_router(implementations: Iterable[RestApi], *, public: bool) -> APIRou
     assigned = _assign(implementations, interfaces)
     document = load_contract(public=public)
     contract = operations(document)
-    problem = resolve(document["components"]["responses"]["Problem"], document)
+    problem = resolve_object(document["components"]["responses"]["Problem"], document)
     router = APIRouter(prefix=document["servers"][0]["url"], route_class=C2M2Route, dependencies=[Depends(_bearer)])
     routed: set[tuple[str, str]] = set()
     for api in interfaces:
@@ -123,19 +149,19 @@ def create_router(implementations: Iterable[RestApi], *, public: bool) -> APIRou
             if key in routed:
                 raise LookupError(f"{api.__name__}.{name}: {endpoint.method} {endpoint.path} is declared twice")
             routed.add(key)
-            operation = resolve(contract[key], document)
+            operation = resolve_object(contract[key], document)
             # FastAPI derives the parameters from the interface signature; copying them would duplicate them.
             operation.pop("parameters", None)
             router.add_api_route(
                 endpoint.path,
                 _endpoint_function(getattr(api, name), assigned[api], endpoint),
                 methods=[endpoint.method],
-                status_code=next(int(code) for code in operation["responses"] if code.startswith("2")),
+                status_code=_success_status(operation),
                 response_model=None,
-                operation_id=operation["operationId"],
-                summary=operation.get("summary"),
-                description=operation.get("description"),
-                tags=operation.get("tags"),
+                operation_id=_text(operation, "operationId", required=True),
+                summary=_text(operation, "summary"),
+                description=_text(operation, "description"),
+                tags=_tags(operation),
                 # A default Problem keeps FastAPI from advertising its unused 422 response.
                 responses={"default": problem},
                 openapi_extra=operation,

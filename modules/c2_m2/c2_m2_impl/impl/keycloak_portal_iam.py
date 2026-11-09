@@ -38,7 +38,8 @@ PAGE = 100
 
 
 class KeycloakPortalIam(PortalIam):
-    """Keycloak Admin REST API under `{IAM_URL}/admin/realms/{IAM_REALM}`, with the service account `C2_M2_CLIENT_ID`."""
+    """Keycloak Admin REST API under `{IAM_URL}/admin/realms/{IAM_REALM}`, with the service account
+    `C2_M2_CLIENT_ID`."""
 
     def __init__(self, config: Config) -> None:
         self.config = config

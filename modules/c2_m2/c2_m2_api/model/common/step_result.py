@@ -22,14 +22,12 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: GitHub Copilot (claude-opus-5-5)
 #################################################################################
-from typing import Generic, Literal, TypeVar
+from typing import Literal
 
 from modules.c2_m2.c2_m2_api.model.api_model import ApiModel
 
-T = TypeVar("T")
 
-
-class StepResult(ApiModel, Generic[T]):
+class StepResult[T](ApiModel):
     """Returned by every step to Process Orchestration (FRAMEWORK 4.4)."""
     step_run_id: str | None = None
     state: Literal["DONE", "RUNNING"]

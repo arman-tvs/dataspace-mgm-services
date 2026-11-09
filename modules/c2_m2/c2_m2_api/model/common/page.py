@@ -22,14 +22,11 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: GitHub Copilot (claude-opus-5-5)
 #################################################################################
-from typing import Generic, TypeVar
 
 from modules.c2_m2.c2_m2_api.model.api_model import ApiModel
 
-T = TypeVar("T")
 
-
-class Page(ApiModel, Generic[T]):
+class Page[T](ApiModel):
     """Returned by every list operation: `{items, page, size, total}` (FRAMEWORK 4.1)."""
     items: list[T]
     page: int

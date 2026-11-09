@@ -26,7 +26,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -49,7 +48,10 @@ def operations(document: dict) -> dict[tuple[str, str], dict]:
     }
 
 
-def resolve(value: Any, document: dict) -> Any:
+type Json = str | int | float | bool | None | list[Json] | dict[str, Json]
+
+
+def resolve(value: Json, document: dict[str, Json]) -> Json:
     """Inline local references so the installation's generated OpenAPI needs no module components."""
     if isinstance(value, list):
         return [resolve(item, document) for item in value]
@@ -57,10 +59,22 @@ def resolve(value: Any, document: dict) -> Any:
         return value
     if "$ref" in value:
         reference = value["$ref"]
-        if not reference.startswith("#/"):
+        if not isinstance(reference, str) or not reference.startswith("#/"):
             raise ValueError(f"Only local contract references are supported: {reference}")
-        target = document
+        target: Json = document
         for part in reference[2:].split("/"):
+            if not isinstance(target, dict):
+                raise ValueError(f"Contract reference does not point to an object: {reference}")
             target = target[part.replace("~1", "/").replace("~0", "~")]
+        if not isinstance(target, dict):
+            raise ValueError(f"Contract reference does not point to an object: {reference}")
         return resolve(target | {k: v for k, v in value.items() if k != "$ref"}, document)
     return {key: resolve(item, document) for key, item in value.items()}
+
+
+def resolve_object(value: Json, document: dict[str, Json]) -> dict[str, Json]:
+    """`resolve` for a value that must be an object (an operation, a response)."""
+    resolved = resolve(value, document)
+    if not isinstance(resolved, dict):
+        raise ValueError("Contract value is not an object")
+    return resolved

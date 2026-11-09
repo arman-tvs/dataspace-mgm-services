@@ -24,8 +24,6 @@
 #################################################################################
 from __future__ import annotations
 
-from typing import Any
-
 from modules.c2_m2.c2_m2_api.model.common import Actor
 from modules.c2_m2.c2_m2_api.model.constants import ActorType
 
@@ -40,7 +38,7 @@ class RowMapper:
     CASTS: dict[str, str] = {}
 
     @staticmethod
-    def text(value: Any) -> str | None:
+    def text(value: object) -> str | None:
         return None if value is None else str(value)
 
     @staticmethod

@@ -80,7 +80,8 @@ def split_contract(source: dict, *, public: bool) -> dict:
                 collect({"$ref": f"#/components/schemas/{name}"})
     components["securitySchemes"] = copy.deepcopy(source["components"]["securitySchemes"])
     document["components"] = {
-        category: {name: source["components"][category][name] for name in source["components"][category] if name in group}
+        category: {name: source["components"][category][name] for name in source["components"][category]
+                   if name in group}
         for category, group in components.items()
     }
     return document

@@ -42,7 +42,8 @@ class AppClientTemplateRowMapper(RowMapper):
 
     @classmethod
     def to_model(cls, row: dict) -> AppClientTemplate:
-        return AppClientTemplate(app_id=cls.text(row["app_id"]), provider_company_id=cls.text(row["provider_company_id"]),
+        return AppClientTemplate(app_id=cls.text(row["app_id"]),
+                                 provider_company_id=cls.text(row["provider_company_id"]),
                                  app_name=row["app_name"], iam_client_id=row["iam_client_id"],
                                  iam_client_uuid=row["iam_client_uuid"], created_at=row["created_at"],
                                  changed_at=row["changed_at"])

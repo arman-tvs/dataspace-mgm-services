@@ -62,7 +62,8 @@ class AppClientServiceImpl(AppClientService):
 
     def _template_settings(self, t: AppClientTemplate) -> dict:
         return self._common() | {
-            "clientId": t.iam_client_id, "name": t.app_name, "description": f"Template of app {t.app_id}. Not for sign-in.",
+            "clientId": t.iam_client_id, "name": t.app_name,
+            "description": f"Template of app {t.app_id}. Not for sign-in.",
             "enabled": False, "publicClient": False, "standardFlowEnabled": False,
             "defaultClientScopes": [], "optionalClientScopes": []}
 
@@ -307,7 +308,8 @@ class AppClientServiceImpl(AppClientService):
             missing = [r["name"] for r in roles if iam.client_role(t.iam_client_uuid, r["name"]) is None]
             if missing:
                 raise RoleNotFoundException(f"roles not on the template: {missing}")
-            clients = [t.iam_client_uuid] + [ic.iam_client_uuid for ic in self.ctx.dao.instance_clients.list_of_app(app_id)
+            instance_clients = self.ctx.dao.instance_clients.list_of_app(app_id)
+            clients = [t.iam_client_uuid] + [ic.iam_client_uuid for ic in instance_clients
                                              if ic.iam_client_uuid]
             updated = []
             for r in roles:

@@ -42,5 +42,6 @@ def portal_iam(config: Config) -> PortalIam:
     return KeycloakPortalIam(config)
 
 
-__all__ = ["AppClientServiceImpl", "CompanyProfileGatewayImpl", "InvitationCleanupJobImpl", "InvitationServiceImpl", "KeycloakPortalIam", "NeighbourGateway",
-           "PostgresDatabase", "SubscriptionsGatewayImpl", "UserServiceImpl", "portal_iam"]
+__all__ = ["AppClientServiceImpl", "CompanyProfileGatewayImpl", "InvitationCleanupJobImpl", "InvitationServiceImpl",
+           "KeycloakPortalIam", "NeighbourGateway", "PostgresDatabase", "SubscriptionsGatewayImpl", "UserServiceImpl",
+           "portal_iam"]
