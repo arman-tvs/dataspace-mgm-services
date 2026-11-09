@@ -27,8 +27,9 @@
 `demo.py`, the hackathon installation), as C3-M1's `store_memory`.
 
 Rows are values: every read returns a copy and every save stores one, as a database does. One reentrant lock
-serializes the transactions, which covers the locks of 6.14; the outermost transaction is rolled back when it raises.
-The sequence `client_number` is not rolled back, as in PostgreSQL.
+serializes the transactions, which covers the locks of 6.14. The outermost transaction behaves as
+`PostgresDatabase.transaction`: a business error (`C2M2BaseException`, `Problem`) keeps the writes made so far, any
+other exception rolls them back. The sequence `client_number` is never rolled back, as in PostgreSQL.
 """
 from __future__ import annotations
 
@@ -38,6 +39,9 @@ import itertools
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager
+
+from modules.c2_m2.c2_m2_api.exception import C2M2BaseException
+from portal_common.problems import Problem
 
 
 class MemoryStore:
@@ -54,12 +58,15 @@ class MemoryStore:
 
     @contextlib.contextmanager
     def transaction(self) -> Iterator[None]:
-        """One transaction; nested calls join the open one, the outermost rolls back on an exception."""
+        """One transaction; nested calls join the open one. The outermost keeps the writes on a business error
+        (as `PostgresDatabase` commits then) and rolls them back on any other exception."""
         with self._lock:
             snapshot = [t.snapshot() for t in self._tables] if self._depth == 0 else None
             self._depth += 1
             try:
                 yield
+            except (C2M2BaseException, Problem):
+                raise
             except BaseException:
                 if snapshot is not None:
                     for table, rows in zip(self._tables, snapshot, strict=True):
