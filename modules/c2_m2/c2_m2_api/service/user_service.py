@@ -26,9 +26,18 @@ from __future__ import annotations
 
 import abc
 
-from modules.c2_m2.c2_m2_api.model import (AppRolesResult, AssignCompanyAdminResult, CompanyAppRoles, CompanyUser,
-                                           CompanyUserDetail, CompanyUserRef, CompanyUsersResult, Page, StaffMember,
-                                           UserAccount)
+from modules.c2_m2.c2_m2_api.model import (
+    AppRolesResult,
+    AssignCompanyAdminResult,
+    CompanyAppRoles,
+    CompanyUser,
+    CompanyUserDetail,
+    CompanyUserRef,
+    CompanyUsersResult,
+    Page,
+    StaffMember,
+    UserAccount,
+)
 from modules.c2_m2.c2_m2_api.model.common import Actor
 
 

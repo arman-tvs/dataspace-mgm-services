@@ -23,11 +23,10 @@
 #  Assisted-By: GitHub Copilot
 #################################################################################
 """What every implementation needs: the module's services and the actor of the call."""
-from portal_common import standin
-
 from modules.c2_m2 import module
 from modules.c2_m2.c2_m2_api.model.common import Actor
 from modules.c2_m2.c2_m2_api.model.utils import MODULE
+from portal_common import standin
 
 
 def services() -> module.C2M2Module:

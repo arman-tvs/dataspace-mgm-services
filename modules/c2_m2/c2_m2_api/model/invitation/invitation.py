@@ -22,9 +22,8 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: GitHub Copilot (claude-opus-5-5)
 #################################################################################
-from modules.c2_m2.c2_m2_api.model.constants import InvitationEndReason, InvitationKind, InvitationStatus
-
 from modules.c2_m2.c2_m2_api.model.api_model import ApiModel
+from modules.c2_m2.c2_m2_api.model.constants import InvitationEndReason, InvitationKind, InvitationStatus
 
 
 class Invitation(ApiModel):

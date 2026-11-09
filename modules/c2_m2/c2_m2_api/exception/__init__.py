@@ -24,14 +24,21 @@
 #################################################################################
 """Exceptions the implementation of C2-M2 raises; all derive from `C2M2BaseException`.
 The REST layer translates them to HTTP answers."""
-from .c2_m2_base_exception import C2M2BaseException
-from .validation import UnknownAppRoleException, ValidationException
-from .not_found import InvitationNotFoundException, NotFoundException, RoleNotFoundException, UserNotFoundException
 from .app_client import InstanceExistsException, NoActiveSubscriptionException, TemplateMissingException
-from .company import (CompanyNotActiveException, ConflictException, InvalidStateException, LastCompanyAdminException,
-                      LastOspAdminException, StaffCompanyConflictException, UserAlreadyBoundException)
-from .invitation import InvitationNotOpenException, NameMismatchException, TooManyInvitationsException
+from .c2_m2_base_exception import C2M2BaseException
+from .company import (
+                      CompanyNotActiveException,
+                      ConflictException,
+                      InvalidStateException,
+                      LastCompanyAdminException,
+                      LastOspAdminException,
+                      StaffCompanyConflictException,
+                      UserAlreadyBoundException,
+)
 from .external import IamErrorException, UpstreamErrorException
+from .invitation import InvitationNotOpenException, NameMismatchException, TooManyInvitationsException
+from .not_found import InvitationNotFoundException, NotFoundException, RoleNotFoundException, UserNotFoundException
+from .validation import UnknownAppRoleException, ValidationException
 
 ALL_EXCEPTIONS: tuple[type[C2M2BaseException], ...] = (
     ValidationException, UnknownAppRoleException,

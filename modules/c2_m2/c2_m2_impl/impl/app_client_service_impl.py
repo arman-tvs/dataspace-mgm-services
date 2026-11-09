@@ -25,17 +25,27 @@
 """App clients and app roles: steps 8.1 to 8.7 and queries 9.1 to 9.3 (README 6.1 to 6.4)."""
 from __future__ import annotations
 
-from modules.c2_m2.c2_m2_api.exception import (InstanceExistsException, InvalidStateException, NotFoundException,
-                                               RoleNotFoundException, TemplateMissingException)
-from modules.c2_m2.c2_m2_api.model import (AddAppRolesResult, AppInstanceClient as AppInstanceClientModel,
-                                           AppRoles, TemplateResult, UpdateRoleDescriptionsResult)
+from modules.c2_m2.c2_m2_api.exception import (
+    InstanceExistsException,
+    InvalidStateException,
+    NotFoundException,
+    RoleNotFoundException,
+    TemplateMissingException,
+)
+from modules.c2_m2.c2_m2_api.model import AddAppRolesResult, AppRoles, TemplateResult, UpdateRoleDescriptionsResult
+from modules.c2_m2.c2_m2_api.model import AppInstanceClient as AppInstanceClientModel
 from modules.c2_m2.c2_m2_api.model.common import Actor
 from modules.c2_m2.c2_m2_api.model.constants import InstanceClientStatus, InstanceKind
 from modules.c2_m2.c2_m2_api.service import AppClientService
 from modules.c2_m2.c2_m2_impl.config.properties import as_int, as_list
 from modules.c2_m2.c2_m2_impl.context import Context
-from modules.c2_m2.c2_m2_impl.internal.model import (AppClientTemplate, AppInstanceClient, AppRoleRepresentation,
-                                                     new_id, now)
+from modules.c2_m2.c2_m2_impl.internal.model import (
+    AppClientTemplate,
+    AppInstanceClient,
+    AppRoleRepresentation,
+    new_id,
+    now,
+)
 from modules.c2_m2.c2_m2_impl.utils.validation_utils import invalid
 
 

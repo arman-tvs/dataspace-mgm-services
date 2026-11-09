@@ -50,7 +50,7 @@ class PostgresDatabase(Database):
     versions by Alembic. The URL is never logged because it carries the password."""
 
     def __init__(self, url: str) -> None:
-        from sqlalchemy import create_engine   # only needed when DATABASE_URL is set
+        from sqlalchemy import create_engine  # only needed when DATABASE_URL is set
         from sqlalchemy.orm import sessionmaker
         self.engine = create_engine(sqlalchemy_url(url), pool_pre_ping=True)
         self._sessions = sessionmaker(self.engine)

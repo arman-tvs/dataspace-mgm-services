@@ -29,8 +29,17 @@ from typing import Annotated
 from fastapi import Query
 
 from modules.c2_m2.c2_m2_api.model import CompanyUser, Page, UserAccount
-from modules.c2_m2.c2_m2_rs_api.endpoint import (Claims, CompanyId, JsonBody, PageNumber, PageSize, RestApi,
-                                                 StatusFilter, UserId, api)
+from modules.c2_m2.c2_m2_rs_api.endpoint import (
+    Claims,
+    CompanyId,
+    JsonBody,
+    PageNumber,
+    PageSize,
+    RestApi,
+    StatusFilter,
+    UserId,
+    api,
+)
 
 CompanyFilter = Annotated[str | None, Query(alias="companyId")]
 

@@ -38,9 +38,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBearer
 
-from portal_common import tokens
-
 from modules.c2_m2.c2_m2_api.model.utils import MODULE
+from portal_common import tokens
 
 from .apis import PRIVATE_APIS, PUBLIC_APIS
 from .c2_m2_route import C2M2Route

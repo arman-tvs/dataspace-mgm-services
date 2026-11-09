@@ -29,18 +29,42 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Iterator
 
-from modules.c2_m2.c2_m2_api.exception import (CompanyNotActiveException, ConflictException, InvalidStateException,
-                                               LastCompanyAdminException, LastOspAdminException,
-                                               NoActiveSubscriptionException, NotFoundException,
-                                               StaffCompanyConflictException, UnknownAppRoleException,
-                                               UserAlreadyBoundException, UserNotFoundException)
-from modules.c2_m2.c2_m2_api.model import (AppRolesResult, AssignCompanyAdminResult, CompanyAppRoles,
-                                           CompanyUser as CompanyUserModel, CompanyUserDetail, CompanyUserRef,
-                                           CompanyUsersResult, Page, StaffMember, UserAccount)
+from modules.c2_m2.c2_m2_api.exception import (
+    CompanyNotActiveException,
+    ConflictException,
+    InvalidStateException,
+    LastCompanyAdminException,
+    LastOspAdminException,
+    NoActiveSubscriptionException,
+    NotFoundException,
+    StaffCompanyConflictException,
+    UnknownAppRoleException,
+    UserAlreadyBoundException,
+    UserNotFoundException,
+)
+from modules.c2_m2.c2_m2_api.model import (
+    AppRolesResult,
+    AssignCompanyAdminResult,
+    CompanyAppRoles,
+    CompanyUserDetail,
+    CompanyUserRef,
+    CompanyUsersResult,
+    Page,
+    StaffMember,
+    UserAccount,
+)
+from modules.c2_m2.c2_m2_api.model import CompanyUser as CompanyUserModel
 from modules.c2_m2.c2_m2_api.model.common import Actor
-from modules.c2_m2.c2_m2_api.model.constants import (BindingStatus, CompanyStatus, InstanceClientStatus,
-                                                     InvitationEndReason, InvitationStatus, JoinedVia, RemovalReason,
-                                                     RoleKind)
+from modules.c2_m2.c2_m2_api.model.constants import (
+    BindingStatus,
+    CompanyStatus,
+    InstanceClientStatus,
+    InvitationEndReason,
+    InvitationStatus,
+    JoinedVia,
+    RemovalReason,
+    RoleKind,
+)
 from modules.c2_m2.c2_m2_api.service import UserService
 from modules.c2_m2.c2_m2_impl.config.properties import as_list
 from modules.c2_m2.c2_m2_impl.context import Context, paginate, statuses

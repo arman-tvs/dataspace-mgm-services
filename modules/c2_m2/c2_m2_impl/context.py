@@ -34,8 +34,7 @@ from modules.c2_m2.c2_m2_impl.config import Config
 from modules.c2_m2.c2_m2_impl.config.properties import as_list
 from modules.c2_m2.c2_m2_impl.dao import DaoService
 from modules.c2_m2.c2_m2_impl.internal.model import AppInstanceClient, AuditLogEntry, RoleAssignmentLogEntry
-from modules.c2_m2.c2_m2_impl.internal.services import (CompanyProfileGateway, PortalIam, SubscriptionsGateway,
-                                                        iam_error)
+from modules.c2_m2.c2_m2_impl.internal.services import CompanyProfileGateway, PortalIam, SubscriptionsGateway, iam_error
 from modules.c2_m2.c2_m2_impl.utils.validation_utils import Validator, invalid
 from portal_common import events
 

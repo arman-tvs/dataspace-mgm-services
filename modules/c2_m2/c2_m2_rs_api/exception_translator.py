@@ -24,17 +24,33 @@
 #################################################################################
 from __future__ import annotations
 
+from modules.c2_m2.c2_m2_api.exception import (
+    C2M2BaseException,
+    CompanyNotActiveException,
+    ConflictException,
+    IamErrorException,
+    InstanceExistsException,
+    InvalidStateException,
+    InvitationNotFoundException,
+    InvitationNotOpenException,
+    LastCompanyAdminException,
+    LastOspAdminException,
+    NameMismatchException,
+    NoActiveSubscriptionException,
+    NotFoundException,
+    RoleNotFoundException,
+    StaffCompanyConflictException,
+    TemplateMissingException,
+    TooManyInvitationsException,
+    UnknownAppRoleException,
+    UpstreamErrorException,
+    UserAlreadyBoundException,
+    UserNotFoundException,
+    ValidationException,
+)
+from modules.c2_m2.c2_m2_api.model.utils import MODULE
 from portal_common import problems
 from portal_common.problems import Problem
-
-from modules.c2_m2.c2_m2_api.exception import (
-    C2M2BaseException, CompanyNotActiveException, ConflictException, IamErrorException, InstanceExistsException,
-    InvalidStateException, InvitationNotFoundException, InvitationNotOpenException, LastCompanyAdminException,
-    LastOspAdminException, NameMismatchException, NoActiveSubscriptionException, NotFoundException,
-    RoleNotFoundException, StaffCompanyConflictException, TemplateMissingException, TooManyInvitationsException,
-    UnknownAppRoleException, UpstreamErrorException, UserAlreadyBoundException, UserNotFoundException,
-    ValidationException)
-from modules.c2_m2.c2_m2_api.model.utils import MODULE
 
 
 class ExceptionTranslator:

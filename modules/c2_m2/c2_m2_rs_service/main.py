@@ -43,11 +43,10 @@ import os
 
 from fastapi import FastAPI
 
-from portal_common import events, http, problems, settings, tokens
-
 from modules.c2_m2 import module
 from modules.c2_m2.c2_m2_api.model.utils import MODULE
 from modules.c2_m2.c2_m2_rs_service.routers import router
+from portal_common import events, http, problems, settings, tokens
 
 
 def _uses_test_iam() -> bool:

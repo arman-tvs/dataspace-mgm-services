@@ -30,15 +30,26 @@ import datetime as dt
 import json
 from pathlib import Path
 
-from modules.c2_m2.c2_m2_api.exception import (CompanyNotActiveException, InvitationNotFoundException,
-                                               InvitationNotOpenException, NameMismatchException, NotFoundException,
-                                               StaffCompanyConflictException, TooManyInvitationsException,
-                                               UserAlreadyBoundException)
-from modules.c2_m2.c2_m2_api.model import (AcceptInvitationResult, Invitation as InvitationModel,
-                                           InvitationWithCode, Page)
+from modules.c2_m2.c2_m2_api.exception import (
+    CompanyNotActiveException,
+    InvitationNotFoundException,
+    InvitationNotOpenException,
+    NameMismatchException,
+    NotFoundException,
+    StaffCompanyConflictException,
+    TooManyInvitationsException,
+    UserAlreadyBoundException,
+)
+from modules.c2_m2.c2_m2_api.model import AcceptInvitationResult, InvitationWithCode, Page
+from modules.c2_m2.c2_m2_api.model import Invitation as InvitationModel
 from modules.c2_m2.c2_m2_api.model.common import Actor
-from modules.c2_m2.c2_m2_api.model.constants import (CompanyStatus, InvitationEndReason, InvitationKind,
-                                                     InvitationStatus, JoinedVia)
+from modules.c2_m2.c2_m2_api.model.constants import (
+    CompanyStatus,
+    InvitationEndReason,
+    InvitationKind,
+    InvitationStatus,
+    JoinedVia,
+)
 from modules.c2_m2.c2_m2_api.service import InvitationService
 from modules.c2_m2.c2_m2_impl.config.properties import as_bool, as_int, as_list
 from modules.c2_m2.c2_m2_impl.context import Context, paginate, statuses

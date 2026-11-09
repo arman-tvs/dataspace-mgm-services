@@ -26,8 +26,16 @@
 from abc import abstractmethod
 
 from modules.c2_m2.c2_m2_api.model import Invitation, InvitationWithCode, Page
-from modules.c2_m2.c2_m2_rs_api.endpoint import (Claims, InvitationId, JsonBody, PageNumber, PageSize, RestApi,
-                                                 StatusFilter, api)
+from modules.c2_m2.c2_m2_rs_api.endpoint import (
+    Claims,
+    InvitationId,
+    JsonBody,
+    PageNumber,
+    PageSize,
+    RestApi,
+    StatusFilter,
+    api,
+)
 
 
 class OspStaffInvitationsApi(RestApi):
