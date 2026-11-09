@@ -47,6 +47,7 @@ import yaml
 import pytest
 
 from portal_common import events, neighbours, spec
+from tools import testdata
 from test_c4_m2_common import (
     COMPANIES,
     CSP_URL,
@@ -78,8 +79,19 @@ def assert_reached_in_process(*modules: str) -> None:
 def start(osp_factory, env: dict | None = None):
     osp = osp_factory({**ENV, **(env or {})}, csp=True)
     assert_reached_in_process("c4-m2", "c4-m1", "c3-m1")
-    osp.csp_register(BPN, osp_id=OSP_A_ID)        # the company is registered at the CSP by C3-M2 (here: directly)
-    return osp, osp.service("svc-c12-m1")
+    svc = osp.service("svc-c12-m1")
+    register_at_csp(osp, svc)
+    return osp, svc
+
+
+def register_at_csp(osp, svc) -> None:
+    """The company is registered at the CSP through C3-M2's step register-company (C3-M2 README 8.1), as in the
+    onboarding flow: C3-M2 then knows it as REGISTERED, the precondition of register-did (8.3). The CSP stand-in
+    derives the BPN from the EBWOID of testdata (`BPNLIUK2REMLK3F4`)."""
+    company = testdata.applicant_companies()["maschinenbau"]
+    r = osp.post("/api/c3-m2/steps/register-company", svc, json=step_input(
+        U1["id"], 90, legalName=company["legalName"], country="DE", ebwoid=company["ebwoid"]))
+    assert r.status_code == 200 and r.json()["result"]["bpn"] == BPN, r.text
 
 
 def _routed(r, what: str):
