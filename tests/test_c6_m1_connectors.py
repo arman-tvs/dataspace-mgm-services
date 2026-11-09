@@ -41,6 +41,8 @@ PROVIDER = "11111111-1111-4111-8111-111111111111"      # company of OSP A, Compa
 HOST = "c0000001-0000-4000-8000-000000000001"          # Beispiel Maschinenbau GmbH (FRAMEWORK 7a)
 TU = "c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f"            # technical user of the host (README 14)
 SUB = "d4e5f6a7-b8c9-4d0e-9f1a-2b3c4d5e6f70"           # subscription of a service of the provider (README 14)
+PROCESS = "5e1c0d2a-7b3f-4c8e-9a10-000000000011"       # process and step run of a C2-M3 step (C12-M1)
+STEP_RUN = "5e1c0d2a-7b3f-4c8e-9a10-000000000012"
 ENDPOINT = "https://edc.beispiel-maschinenbau.example/dsp"
 OTHER = "c0000002-0000-4000-8000-000000000002"
 PROCESS = "9f0e1d2c-3b4a-4c5d-8e6f-7a8b9c0d1e2f"
@@ -219,9 +221,11 @@ def test_11_customer_account_of_the_subscription(api, monkeypatch):
     from modules.c2_m3 import interface as c2_m3
     monkeypatch.setenv("C2_M3_URL", "in-process")
     c2_m3.reset()
-    tu = c2_m3.create_for_subscription({"processId": "p", "stepRunId": "s", "offerSubscriptionId": SUB,
+    # the step input of C2-M3 openapi `StepCreateForSubscription`: UUIDs for the ids, at least one role
+    tu = c2_m3.create_for_subscription({"processId": PROCESS, "stepRunId": STEP_RUN, "offerSubscriptionId": SUB,
                                         "customerCompanyId": HOST, "providerCompanyId": PROVIDER,
-                                        "name": "edc", "roles": []})["result"]["accounts"][0]["technicalUserId"]
+                                        "name": "edc", "roles": [{"name": "Dataspace Discovery"}]}
+                                       )["result"]["accounts"][0]["technicalUserId"]
     # company connector of the customer without offerSubscriptionId: C2-M3 says not usable (account still unlinked)
     assert problem(register(api, name="own", endpoint="https://own.example/dsp", technicalUserId=tu),
                    409, "technical-user-not-usable")
