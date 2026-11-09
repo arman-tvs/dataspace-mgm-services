@@ -24,7 +24,6 @@
 #################################################################################
 """Contract and HTTP tests for the C2-M2 public/private API boundary."""
 import ast
-import os
 
 import pytest
 from fastapi import FastAPI
@@ -46,8 +45,6 @@ API = "/api/c2-m2"
 COMPANY = "c0000001-0000-4000-8000-000000000001"
 USER = "5a1c0001-0000-4000-8000-000000000001"
 
-needs_database = pytest.mark.skipif(not os.environ.get("DATABASE_URL"),
-                                    reason="C2-M2 needs its PostgreSQL: set DATABASE_URL (README 4)")
 
 
 def operations(document):
@@ -177,7 +174,6 @@ def test_every_http_endpoint_requires_authentication(client, public):
             assert "retryable" in response.json()
 
 
-@needs_database
 def test_private_queries_still_work_with_service_tokens_and_reject_people(client):
     response = client.get(API + "/internal/company-users", params={"companyId": COMPANY},
                           headers=bearer(person_token("otto")))
@@ -192,7 +188,6 @@ def test_private_queries_still_work_with_service_tokens_and_reject_people(client
     assert response.json()["type"] == "urn:c2-m2:problem:validation"
 
 
-@needs_database
 @needs_admin_api
 def test_public_handlers_preserve_scope_validation_and_camel_case(client):
     interface.assign_company_admin({
@@ -260,7 +255,6 @@ def test_scaffold_preserves_complete_api_without_fallback_duplicates(client):
                 assert "stand-in" not in document["paths"][path][method].get("summary", "")
 
 
-@needs_database
 @needs_admin_api
 def test_delete_answers_204_without_body(client):
     interface.assign_company_admin({

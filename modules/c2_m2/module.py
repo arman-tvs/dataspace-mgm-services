@@ -30,22 +30,25 @@ import threading
 
 from .c2_m2_impl.config import Config
 from .c2_m2_impl.context import Context
-from .c2_m2_impl.dao.impl import postgres_dao_service
+from .c2_m2_impl.dao.dao_service import DaoService
+from .c2_m2_impl.dao.impl import memory_dao_service, postgres_dao_service
 from .c2_m2_impl.dao.jdbc import MIGRATIONS_DIR
-from .c2_m2_impl.impl import (AppClientServiceImpl, CompanyProfileGatewayImpl, InvitationCleanupJobImpl,
-                              InvitationServiceImpl, PostgresDatabase, SubscriptionsGatewayImpl, UserServiceImpl,
-                              portal_iam)
+from .c2_m2_impl.impl import (
+    AppClientServiceImpl,
+    CompanyProfileGatewayImpl,
+    InvitationCleanupJobImpl,
+    InvitationServiceImpl,
+    PostgresDatabase,
+    SubscriptionsGatewayImpl,
+    UserServiceImpl,
+    portal_iam,
+)
 
 
 class C2M2Module:
     def __init__(self, config: Config | None = None) -> None:
         config = config or Config()
-        database_url = config.from_properties("database.url")
-        if not database_url:
-            raise RuntimeError(f"C2-M2 needs its database: set database.url (DATABASE_URL, README 4) in {config.config_file}")
-        db = PostgresDatabase(database_url)
-        db.migrate(MIGRATIONS_DIR)
-        self.ctx = Context(config, portal_iam(config), postgres_dao_service(db), SubscriptionsGatewayImpl(),
+        self.ctx = Context(config, portal_iam(config), _dao_service(config), SubscriptionsGatewayImpl(),
                            CompanyProfileGatewayImpl())
         self.apps = AppClientServiceImpl(self.ctx)
         self.users = UserServiceImpl(self.ctx, self.apps)
@@ -58,6 +61,18 @@ class C2M2Module:
 
     def close(self) -> None:
         self.cleanup.stop()
+
+
+
+def _dao_service(config: Config) -> DaoService:
+    """The module's own database `c2_m2` when `database.url` (README 4 `DATABASE_URL`) is set, otherwise the in-memory
+    store (tests, `demo.py`, the hackathon installation), as C3-M1 chooses its store."""
+    database_url = config.from_properties("database.url")
+    if not database_url:
+        return memory_dao_service()
+    db = PostgresDatabase(database_url)
+    db.migrate(MIGRATIONS_DIR)
+    return postgres_dao_service(db)
 
 
 _lock = threading.Lock()

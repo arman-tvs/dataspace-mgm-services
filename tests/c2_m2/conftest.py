@@ -22,8 +22,8 @@
 #  SPDX-License-Identifier: Apache-2.0 AND CC0-1.0
 #  Assisted-By: GitHub Copilot (claude-opus-5-5)
 #################################################################################
-"""C2-M2 tests that run against the database of `DATABASE_URL` start with empty tables, like the in-memory
-data of the other modules. Only the test database is emptied; the schema and its Alembic version stay."""
+"""Every C2-M2 test starts with empty tables: a fresh in-memory store, or, with `DATABASE_URL`, the emptied test
+database (the schema and its Alembic version stay)."""
 import os
 
 import pytest
@@ -54,7 +54,7 @@ def _truncate(url: str) -> None:
 @pytest.fixture(autouse=True)
 def _empty_c2_m2_database():
     url = os.environ.get("DATABASE_URL")
+    module.reset()
     if url:
-        module.reset()
         _truncate(url)
     yield

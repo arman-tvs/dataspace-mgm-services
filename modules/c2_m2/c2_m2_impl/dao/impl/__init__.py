@@ -26,6 +26,16 @@
 from modules.c2_m2.c2_m2_impl.dao.dao_service import DaoService
 from modules.c2_m2.c2_m2_impl.internal.services import Database
 
+from .memory_daos import (
+    MemoryAppClientTemplateDao,
+    MemoryAppInstanceClientDao,
+    MemoryAuditLogDao,
+    MemoryCompanyDao,
+    MemoryCompanyUserDao,
+    MemoryInvitationDao,
+    MemoryRoleAssignmentLogDao,
+)
+from .memory_store import MemoryStore
 from .postgres_app_client_template_dao import PostgresAppClientTemplateDao
 from .postgres_app_instance_client_dao import PostgresAppInstanceClientDao
 from .postgres_audit_log_dao import PostgresAuditLogDao
@@ -41,5 +51,15 @@ def postgres_dao_service(db: Database) -> DaoService:
                       PostgresRoleAssignmentLogDao(db))
 
 
+
+def memory_dao_service() -> DaoService:
+    """The DAOs on the in-memory store, for an installation without a database (README 4 `DATABASE_URL` empty)."""
+    store = MemoryStore()
+    return DaoService(store, MemoryAppClientTemplateDao(store), MemoryAppInstanceClientDao(store),
+                      MemoryCompanyDao(store), MemoryCompanyUserDao(store), MemoryInvitationDao(store),
+                      MemoryAuditLogDao(store), MemoryRoleAssignmentLogDao(store))
+
+
 __all__ = ["PostgresAppClientTemplateDao", "PostgresAppInstanceClientDao", "PostgresAuditLogDao", "PostgresCompanyDao",
-           "PostgresCompanyUserDao", "PostgresInvitationDao", "PostgresRoleAssignmentLogDao", "postgres_dao_service"]
+           "PostgresCompanyUserDao", "PostgresInvitationDao", "PostgresRoleAssignmentLogDao", "memory_dao_service",
+           "postgres_dao_service"]
