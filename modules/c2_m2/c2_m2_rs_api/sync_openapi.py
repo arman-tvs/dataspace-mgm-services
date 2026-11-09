@@ -36,6 +36,22 @@ from portal_common import spec
 DIRECTORY = Path(__file__).resolve().parent
 
 
+def _collect_components(value: object, source: dict, components: dict[str, dict]) -> None:
+    """Every component that `value` references, directly or through other components, into `components`."""
+    if isinstance(value, list):
+        for item in value:
+            _collect_components(item, source, components)
+    elif isinstance(value, dict):
+        if "$ref" in value:
+            category, name = value["$ref"].removeprefix("#/components/").split("/")
+            group = components.setdefault(category, {})
+            if name not in group:
+                group[name] = copy.deepcopy(source["components"][category][name])
+                _collect_components(group[name], source, components)
+        for item in value.values():
+            _collect_components(item, source, components)
+
+
 def split_contract(source: dict, *, public: bool) -> dict:
     document = copy.deepcopy(source)
     document["info"]["title"] += " - Public API" if public else " - Private API"
@@ -57,27 +73,12 @@ def split_contract(source: dict, *, public: bool) -> dict:
         for method in spec.METHODS if method in item for tag in item[method].get("tags", [])
     }
     document["tags"] = [tag for tag in document["tags"] if tag["name"] in tags]
-    components: dict = {}
-
-    def collect(value) -> None:
-        if isinstance(value, list):
-            for item in value:
-                collect(item)
-        elif isinstance(value, dict):
-            if "$ref" in value:
-                category, name = value["$ref"].removeprefix("#/components/").split("/")
-                group = components.setdefault(category, {})
-                if name not in group:
-                    group[name] = copy.deepcopy(source["components"][category][name])
-                    collect(group[name])
-            for item in value.values():
-                collect(item)
-
-    collect(document["paths"])
+    components: dict[str, dict] = {}
+    _collect_components(document["paths"], source, components)
     if not public:
         for name in source["components"]["schemas"]:
             if name.startswith("Event"):
-                collect({"$ref": f"#/components/schemas/{name}"})
+                _collect_components({"$ref": f"#/components/schemas/{name}"}, source, components)
     components["securitySchemes"] = copy.deepcopy(source["components"]["securitySchemes"])
     document["components"] = {
         category: {name: source["components"][category][name] for name in source["components"][category]
