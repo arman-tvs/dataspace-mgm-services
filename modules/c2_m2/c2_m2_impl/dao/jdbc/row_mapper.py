@@ -42,6 +42,13 @@ class RowMapper:
         return None if value is None else str(value)
 
     @staticmethod
+    def key(value: object) -> str:
+        """A NOT NULL column (a primary or foreign key) as a string; NULL there is a broken row."""
+        if value is None:
+            raise ValueError("NULL in a NOT NULL column")
+        return str(value)
+
+    @staticmethod
     def actor_params(actor: Actor) -> tuple:
         return str(actor.type), actor.sub, actor.process_id, actor.step_run_id
 

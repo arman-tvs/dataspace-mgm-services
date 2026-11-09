@@ -43,7 +43,7 @@ class AppInstanceClientRowMapper(RowMapper):
 
     @classmethod
     def to_model(cls, row: dict) -> AppInstanceClient:
-        return AppInstanceClient(id=cls.text(row["id"]), app_id=cls.text(row["app_id"]),
+        return AppInstanceClient(id=cls.key(row["id"]), app_id=cls.key(row["app_id"]),
                                  instance_kind=InstanceKind(row["instance_kind"]),
                                  offer_subscription_id=cls.text(row["offer_subscription_id"]),
                                  customer_company_id=cls.text(row["customer_company_id"]),

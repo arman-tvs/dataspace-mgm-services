@@ -24,6 +24,8 @@
 #################################################################################
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
+
 from modules.c2_m2.c2_m2_impl.dao.app_client_template_dao import AppClientTemplateDao
 from modules.c2_m2.c2_m2_impl.dao.jdbc import AppClientTemplateRowMapper as Mapper
 from modules.c2_m2.c2_m2_impl.internal.model import AppClientTemplate
@@ -34,7 +36,7 @@ class PostgresAppClientTemplateDao(AppClientTemplateDao):
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    def lock(self, app_id: str):
+    def lock(self, app_id: str) -> AbstractContextManager[None]:
         return self.db.lock(f"c2_m2:app:{app_id}")
 
     def get(self, app_id: str) -> AppClientTemplate | None:

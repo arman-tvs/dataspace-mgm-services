@@ -24,7 +24,9 @@
 #################################################################################
 from __future__ import annotations
 
-from fastapi import Request
+from collections.abc import Callable, Coroutine
+
+from fastapi import Request, Response
 from fastapi.routing import APIRoute
 
 from .exception_translator import ExceptionTranslator
@@ -33,11 +35,11 @@ from .exception_translator import ExceptionTranslator
 class C2M2Route(APIRoute):
     """Route class of the C2-M2 router: every error leaves as Problem Details via `ExceptionTranslator`."""
 
-    def get_route_handler(self):
+    def get_route_handler(self) -> Callable[[Request], Coroutine[object, object, Response]]:
         original = super().get_route_handler()
         is_step = "/steps/" in self.path
 
-        async def handler(request: Request):
+        async def handler(request: Request) -> Response:
             try:
                 return await original(request)
             except Exception as exc:  # noqa: BLE001 - every error leaves as Problem Details

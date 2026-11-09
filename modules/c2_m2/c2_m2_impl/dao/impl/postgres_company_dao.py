@@ -24,6 +24,8 @@
 #################################################################################
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
+
 from modules.c2_m2.c2_m2_impl.dao.company_dao import CompanyDao
 from modules.c2_m2.c2_m2_impl.dao.jdbc import CompanyRowMapper as Mapper
 from modules.c2_m2.c2_m2_impl.internal.model import Company
@@ -34,7 +36,7 @@ class PostgresCompanyDao(CompanyDao):
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    def lock(self, company_id: str):
+    def lock(self, company_id: str) -> AbstractContextManager[None]:
         return self.db.lock(f"c2_m2:company:{company_id}")
 
     def get(self, company_id: str) -> Company | None:

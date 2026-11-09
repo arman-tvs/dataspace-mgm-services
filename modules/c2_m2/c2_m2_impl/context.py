@@ -25,7 +25,9 @@
 """What the service implementations of C2-M2 share: configuration, DAO service, Portal IAM, neighbours, events."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from modules.c2_m2.c2_m2_api.model.common import Actor
 from modules.c2_m2.c2_m2_api.model.constants import RoleKind
@@ -87,13 +89,13 @@ class Context:
         return self._core_roles[name]
 
 
-def paginate(items: list, page: int, size: int, render) -> dict:
+def paginate[T](items: list[T], page: int, size: int, render: Callable[[T], object]) -> dict[str, object]:
     """Lists as in FRAMEWORK 4.1: `{items, page, size, total}`."""
     chunk = items[page * size:(page + 1) * size]
     return {"items": [render(x) for x in chunk], "page": page, "size": size, "total": len(items)}
 
 
-def statuses(values: list[str] | str | None, allowed: type, default: list) -> set:
+def statuses[E: StrEnum](values: list[str] | str | None, allowed: type[E], default: list[E]) -> set[E]:
     """Repeatable `status` filter, validated against an enumeration."""
     given = [values] if isinstance(values, str) else list(values or [])
     try:

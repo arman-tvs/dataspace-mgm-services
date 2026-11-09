@@ -45,7 +45,7 @@ class InvitationRowMapper(RowMapper):
 
     @classmethod
     def to_model(cls, row: dict) -> Invitation:
-        return Invitation(id=cls.text(row["id"]), kind=InvitationKind(row["kind"]),
+        return Invitation(id=cls.key(row["id"]), kind=InvitationKind(row["kind"]),
                           company_id=cls.text(row["company_id"]), given_name=row["given_name"],
                           family_name=row["family_name"], roles=list(row["roles"] or []), code_hash=row["code_hash"],
                           status=InvitationStatus(row["status"]),

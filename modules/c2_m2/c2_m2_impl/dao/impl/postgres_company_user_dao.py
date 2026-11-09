@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import AbstractContextManager
 
 from modules.c2_m2.c2_m2_api.model.constants import BindingStatus
 from modules.c2_m2.c2_m2_impl.dao.company_user_dao import CompanyUserDao
@@ -39,7 +40,7 @@ class PostgresCompanyUserDao(CompanyUserDao):
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    def lock_account(self, user_id: str):
+    def lock_account(self, user_id: str) -> AbstractContextManager[None]:
         return self.db.lock(f"c2_m2:account:{user_id}")
 
     def save(self, binding: CompanyUser) -> None:

@@ -93,7 +93,9 @@ class ExceptionTranslator:
         if not isinstance(exc, C2M2BaseException):
             return problems.to_problem(MODULE, exc, is_step)
         status, name = cls.rule(exc)
-        ext = dict(exc.details)
+        ext: dict[str, str | int | bool | list[str]] = dict(exc.details)
         if is_step or exc.retryable is not None:
             ext["retryable"] = exc.retryable if exc.retryable is not None else status >= 500
-        return Problem(MODULE, status, name, detail=exc.detail, **ext)
+        problem = Problem(MODULE, status, name, detail=exc.detail)
+        problem.ext = dict(ext)
+        return problem

@@ -26,7 +26,7 @@
 section 9, called in-process without a token (AGENTS.md, call convention)."""
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from pydantic import BaseModel
 
@@ -47,13 +47,9 @@ def reset() -> None:
     module.reset()
 
 
-def _json(value):
-    """The JSON body of the HTTP form (call convention): models as camelCase dicts."""
-    if isinstance(value, BaseModel):
-        return value.model_dump(mode="json")
-    if isinstance(value, list):
-        return [_json(v) for v in value]
-    return value
+def _body(model: BaseModel) -> dict[str, object]:
+    """The JSON body of the HTTP form (call convention): a model as a camelCase dict."""
+    return model.model_dump(mode="json")
 
 
 def _step(input: dict, action: Callable[[dict], BaseModel]) -> dict:
@@ -62,12 +58,19 @@ def _step(input: dict, action: Callable[[dict], BaseModel]) -> dict:
         result = action(input if isinstance(input, dict) else {})
     except C2M2BaseException as exc:
         raise ExceptionTranslator.to_problem(exc, is_step=True) from exc
-    return {"stepRunId": input.get("stepRunId"), "state": "DONE", "result": _json(result)}
+    return {"stepRunId": input.get("stepRunId"), "state": "DONE", "result": _body(result)}
 
 
-def _query(action: Callable[[], object]):
+def _query_one(action: Callable[[], BaseModel]) -> dict[str, object]:
     try:
-        return _json(action())
+        return _body(action())
+    except C2M2BaseException as exc:
+        raise ExceptionTranslator.to_problem(exc) from exc
+
+
+def _query_list(action: Callable[[], Sequence[BaseModel]]) -> list[dict[str, object]]:
+    try:
+        return [_body(model) for model in action()]
     except C2M2BaseException as exc:
         raise ExceptionTranslator.to_problem(exc) from exc
 
@@ -118,22 +121,22 @@ def enable_company_users(input: dict) -> dict:
 
 
 # -- queries (section 9) ----------------------------------------------------------------------------
-def list_app_roles(*, appId: list[str] | str | None = None, lang: str | None = None, **_other) -> list[dict]:
-    return _query(lambda: module.current().apps.list_app_roles(_as_list(appId), lang))
+def list_app_roles(*, appId: list[str] | str | None = None, lang: str | None = None, **_other: object) -> list[dict]:
+    return _query_list(lambda: module.current().apps.list_app_roles(_as_list(appId), lang))
 
 
 def list_app_instance_clients(*, appId: str | None = None, offerSubscriptionId: str | None = None,
                               customerCompanyId: str | None = None, instanceKind: str | None = None,
-                              status: list[str] | str | None = None, **_other) -> list[dict]:
-    return _query(lambda: module.current().apps.list_app_instance_clients(
+                              status: list[str] | str | None = None, **_other: object) -> list[dict]:
+    return _query_list(lambda: module.current().apps.list_app_instance_clients(
         app_id=appId, offer_subscription_id=offerSubscriptionId, customer_company_id=customerCompanyId,
         instance_kind=instanceKind, statuses=_as_list(status)))
 
 
 def get_app_instance_client(*, id: str) -> dict:  # noqa: A002 - openapi name
-    return _query(lambda: module.current().apps.get_app_instance_client(id))
+    return _query_one(lambda: module.current().apps.get_app_instance_client(id))
 
 
 def list_company_user_refs(*, companyId: str | None = None, portalRole: str | None = None,
-                           status: list[str] | str | None = None, **_other) -> list[dict]:
-    return _query(lambda: module.current().users.list_company_user_refs(companyId, portalRole, status))
+                           status: list[str] | str | None = None, **_other: object) -> list[dict]:
+    return _query_list(lambda: module.current().users.list_company_user_refs(companyId, portalRole, status))

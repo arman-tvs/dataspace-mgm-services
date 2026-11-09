@@ -44,9 +44,9 @@ class RoleAssignmentLogRowMapper(RowMapper):
 
     @classmethod
     def to_model(cls, row: dict) -> RoleAssignmentLogEntry:
-        return RoleAssignmentLogEntry(user_id=cls.text(row["user_id"]), company_id=cls.text(row["company_id"]),
+        return RoleAssignmentLogEntry(user_id=cls.key(row["user_id"]), company_id=cls.text(row["company_id"]),
                                       role_kind=RoleKind(row["role_kind"]), iam_client_id=row["iam_client_id"],
                                       role_name=row["role_name"], action=row["action"], actor=cls.actor_from(row),
                                       operation=row["operation"], app_id=cls.text(row["app_id"]),
                                       app_instance_client_id=cls.text(row["app_instance_client_id"]),
-                                      id=cls.text(row["id"]), occurred_at=row["occurred_at"])
+                                      id=cls.key(row["id"]), occurred_at=row["occurred_at"])

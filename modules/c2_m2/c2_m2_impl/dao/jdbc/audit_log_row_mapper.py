@@ -43,4 +43,4 @@ class AuditLogRowMapper(RowMapper):
     def to_model(cls, row: dict) -> AuditLogEntry:
         return AuditLogEntry(actor=cls.actor_from(row), operation=row["operation"],
                              company_id=cls.text(row["company_id"]), object_id=cls.text(row["object_id"]),
-                             id=cls.text(row["id"]), occurred_at=row["occurred_at"])
+                             id=cls.key(row["id"]), occurred_at=row["occurred_at"])

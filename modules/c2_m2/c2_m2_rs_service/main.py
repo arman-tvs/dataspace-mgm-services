@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+from collections.abc import AsyncIterator
 from typing import Literal
 
 from fastapi import FastAPI
@@ -66,9 +67,9 @@ def create_app() -> FastAPI:
     tokens.reset()
 
     @contextlib.asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         events.RELAY.start()
-        module.current().on_startup()   # fails at once without DATABASE_URL (README 4)
+        module.current().on_startup()   # without DATABASE_URL on the in-memory store (README 4)
         try:
             yield
         finally:

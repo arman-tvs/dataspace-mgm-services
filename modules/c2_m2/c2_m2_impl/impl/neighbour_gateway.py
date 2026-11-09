@@ -47,7 +47,7 @@ class NeighbourGateway:
     def stub_items(self) -> list[dict]:
         return json.loads((HERE / self.STUB_FILE).read_text(encoding="utf-8"))["items"]
 
-    def query(self, function: str, **params):
+    def query(self, function: str, **params: object) -> object:
         """None means 404; any other failure is an upstream error (README 11.2)."""
         try:
             return neighbours.query(MODULE, self.TARGET, function, **params)

@@ -46,10 +46,12 @@ class CompanyUserRowMapper(RowMapper):
         return json.dumps({"portalRoles": roles.portal_roles, "appRoles": [list(r) for r in roles.app_roles]})
 
     @staticmethod
-    def _suspended_from(value) -> SuspendedRoles | None:
+    def _suspended_from(value: object) -> SuspendedRoles | None:
         if value is None:
             return None
         data = json.loads(value) if isinstance(value, str) else value
+        if not isinstance(data, dict):
+            raise ValueError("suspended_roles is not a JSON object")
         return SuspendedRoles(portal_roles=list(data.get("portalRoles") or []),
                               app_roles=[tuple(r) for r in data.get("appRoles") or []])
 
@@ -61,8 +63,8 @@ class CompanyUserRowMapper(RowMapper):
 
     @classmethod
     def to_model(cls, row: dict) -> CompanyUser:
-        return CompanyUser(id=cls.text(row["id"]), user_id=cls.text(row["user_id"]),
-                           company_id=cls.text(row["company_id"]), joined_via=JoinedVia(row["joined_via"]),
+        return CompanyUser(id=cls.key(row["id"]), user_id=cls.key(row["user_id"]),
+                           company_id=cls.key(row["company_id"]), joined_via=JoinedVia(row["joined_via"]),
                            given_name=row["given_name"], family_name=row["family_name"],
                            status=BindingStatus(row["status"]), invitation_id=cls.text(row["invitation_id"]),
                            removal_reason=RemovalReason(row["removal_reason"]) if row["removal_reason"] else None,

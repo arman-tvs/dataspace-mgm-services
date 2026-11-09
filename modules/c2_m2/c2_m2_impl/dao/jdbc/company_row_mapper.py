@@ -41,5 +41,5 @@ class CompanyRowMapper(RowMapper):
 
     @classmethod
     def to_model(cls, row: dict) -> Company:
-        return Company(company_id=cls.text(row["company_id"]), bpn=row["bpn"], status=CompanyStatus(row["status"]),
+        return Company(company_id=cls.key(row["company_id"]), bpn=row["bpn"], status=CompanyStatus(row["status"]),
                        created_at=row["created_at"], changed_at=row["changed_at"])

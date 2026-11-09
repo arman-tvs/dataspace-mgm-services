@@ -28,7 +28,8 @@ from __future__ import annotations
 class C2M2BaseException(Exception):
     """Root of every error the implementation of C2-M2 raises; never raised itself."""
 
-    def __init__(self, detail: str | None = None, *, retryable: bool | None = None, **details) -> None:
+    def __init__(self, detail: str | None = None, *, retryable: bool | None = None,
+                 **details: str | int | bool | list[str]) -> None:
         super().__init__(detail or type(self).__name__)
         self.detail = detail
         self.retryable = retryable   # for steps: temporary (True) or final (False), FRAMEWORK 4.4

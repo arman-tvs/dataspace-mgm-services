@@ -24,6 +24,8 @@
 #################################################################################
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
+
 from modules.c2_m2.c2_m2_api.model.constants import InvitationKind
 from modules.c2_m2.c2_m2_impl.dao.invitation_dao import InvitationDao
 from modules.c2_m2.c2_m2_impl.dao.jdbc import InvitationRowMapper as Mapper
@@ -37,10 +39,10 @@ class PostgresInvitationDao(InvitationDao):
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    def lock(self, invitation_id: str):
+    def lock(self, invitation_id: str) -> AbstractContextManager[None]:
         return self.db.lock(f"c2_m2:invitation:{invitation_id}")
 
-    def lock_staff(self):
+    def lock_staff(self) -> AbstractContextManager[None]:
         return self.db.lock("c2_m2:staff:all")
 
     def get(self, invitation_id: str) -> Invitation | None:

@@ -24,6 +24,7 @@
 #################################################################################
 from __future__ import annotations
 
+from modules.c2_m2.c2_m2_api.exception import UpstreamErrorException
 from modules.c2_m2.c2_m2_impl.internal.services import CompanyProfileGateway
 
 from .neighbour_gateway import NeighbourGateway
@@ -38,4 +39,8 @@ class CompanyProfileGatewayImpl(NeighbourGateway, CompanyProfileGateway):
     def company(self, company_id: str) -> dict | None:
         if self.is_standin():
             return next((c for c in self.stub_items() if c["id"] == company_id), None)
-        return self.query("query_company", companyId=company_id)
+        found = self.query("query_company", companyId=company_id)
+        # None means 404; an object is the company; any other shape is an upstream error (README 11.2).
+        if found is not None and not isinstance(found, dict):
+            raise UpstreamErrorException(f"{self.TARGET} query_company gave no company object", retryable=True)
+        return found

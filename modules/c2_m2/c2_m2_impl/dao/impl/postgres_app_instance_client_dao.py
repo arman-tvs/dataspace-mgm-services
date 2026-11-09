@@ -65,4 +65,7 @@ class PostgresAppInstanceClientDao(AppInstanceClientDao):
         return self._many("", ())
 
     def next_client_number(self) -> int:
-        return int(self.db.query_one("SELECT nextval('client_number') AS n")["n"])
+        row = self.db.query_one("SELECT nextval('client_number') AS n")
+        if row is None:
+            raise RuntimeError("the sequence client_number gave no value")
+        return int(row["n"])
