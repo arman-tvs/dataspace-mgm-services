@@ -40,13 +40,21 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+from typing import Literal
 
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 from modules.c2_m2 import module
 from modules.c2_m2.c2_m2_api.model.utils import MODULE
 from modules.c2_m2.c2_m2_rs_service.routers import router
 from portal_common import events, http, problems, settings, tokens
+
+
+class Health(BaseModel):
+    """Answer of `GET /health` of the standalone service (not part of the spec)."""
+    status: Literal["UP"]
+    module: str
 
 
 def _uses_test_iam() -> bool:
@@ -75,9 +83,9 @@ def create_app() -> FastAPI:
         app.include_router(test_iam.router)
     app.include_router(router)
 
-    @app.get("/health", tags=["Service"])
-    def health():
-        return {"status": "UP", "module": MODULE}
+    @app.get("/health", tags=["Service"], operation_id="getHealth", response_model=Health)
+    def health() -> Health:
+        return Health(status="UP", module=MODULE)
 
     http.register_local(settings.base_url(), app)   # token keys of the test IAM without a network hop
     return app
